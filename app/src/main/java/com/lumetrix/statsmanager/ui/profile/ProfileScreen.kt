@@ -12,16 +12,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lumetrix.statsmanager.ui.components.GlassCard
 import com.lumetrix.statsmanager.ui.components.GradientGlassCard
+import com.lumetrix.statsmanager.ui.permissions.UsageAccessBanner
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
 import com.lumetrix.statsmanager.ui.theme.Divider
@@ -34,10 +45,31 @@ import com.lumetrix.statsmanager.ui.theme.Warning
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
-    userName: String = "Alex",
-    title: String = "Deep Worker",
-    level: Int = 12,
+    viewModel: ProfileViewModel = hiltViewModel(),
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResume()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (uiState.isLoading) {
+        Column(
+            modifier = modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(color = AccentPrimary)
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -46,6 +78,10 @@ fun ProfileScreen(
         verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing),
     ) {
         Spacer(modifier = Modifier.height(8.dp))
+
+        if (!uiState.hasUsageAccess) {
+            UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
+        }
 
         GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -59,7 +95,7 @@ fun ProfileScreen(
                 ) {
                     androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = userName.first().uppercase(),
+                            text = uiState.userName.first().uppercase(),
                             style = MaterialTheme.typography.headlineMedium,
                             color = AccentPrimary,
                         )
@@ -67,17 +103,17 @@ fun ProfileScreen(
                 }
                 Column {
                     Text(
-                        text = userName,
+                        text = uiState.userName,
                         style = MaterialTheme.typography.headlineMedium,
                         color = TextPrimary,
                     )
                     Text(
-                        text = title,
+                        text = uiState.productivityTitle,
                         style = MaterialTheme.typography.titleMedium,
                         color = AccentSecondary,
                     )
                     Text(
-                        text = "Level $level",
+                        text = "Level ${uiState.level} · Avg focus ${uiState.averageFocusScore}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                     )
@@ -91,21 +127,18 @@ fun ProfileScreen(
             color = TextPrimary,
         )
 
-        AchievementCard(
-            title = "Focus Streak",
-            subtitle = "7 days of consistent focus",
-            accent = Success,
-        )
-        AchievementCard(
-            title = "Night Guardian",
-            subtitle = "Reduced late-night usage by 30%",
-            accent = AccentSecondary,
-        )
-        AchievementCard(
-            title = "Deep Worker",
-            subtitle = "Completed 50 focus sessions",
-            accent = Warning,
-        )
+        uiState.achievements.forEach { achievement ->
+            AchievementCard(
+                title = achievement.title,
+                subtitle = achievement.subtitle,
+                accent = when {
+                    achievement.unlocked -> Success
+                    achievement.title.contains("Night") -> AccentSecondary
+                    else -> Warning
+                },
+                unlocked = achievement.unlocked,
+            )
+        }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -115,11 +148,11 @@ fun ProfileScreen(
                     color = TextPrimary,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                LifetimeStatRow(label = "Focus hours", value = "128h")
+                LifetimeStatRow(label = "Focus hours", value = uiState.focusHoursLabel)
                 HorizontalDivider(color = Divider)
-                LifetimeStatRow(label = "Days tracked", value = "94")
+                LifetimeStatRow(label = "Days tracked", value = uiState.daysTrackedLabel)
                 HorizontalDivider(color = Divider)
-                LifetimeStatRow(label = "Distraction reduction", value = "32%")
+                LifetimeStatRow(label = "Distraction reduction", value = uiState.distractionReductionLabel)
             }
         }
 
@@ -132,46 +165,30 @@ private fun AchievementCard(
     title: String,
     subtitle: String,
     accent: androidx.compose.ui.graphics.Color,
+    unlocked: Boolean,
 ) {
     GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        glowBorder = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (unlocked) 1f else 0.72f),
+        glowBorder = unlocked,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = accent,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
+            Text(text = title, style = MaterialTheme.typography.titleMedium, color = accent)
+            Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
     }
 }
 
 @Composable
-private fun LifetimeStatRow(
-    label: String,
-    value: String,
-) {
+private fun LifetimeStatRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = TextSecondary,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-        )
+        Text(text = label, style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+        Text(text = value, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
     }
 }

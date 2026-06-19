@@ -12,33 +12,67 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lumetrix.statsmanager.ui.components.AppUsageCard
 import com.lumetrix.statsmanager.ui.components.FocusScoreOrb
 import com.lumetrix.statsmanager.ui.components.GlassCard
 import com.lumetrix.statsmanager.ui.components.GradientGlassCard
 import com.lumetrix.statsmanager.ui.components.NeonLineChart
 import com.lumetrix.statsmanager.ui.components.StatCard
+import com.lumetrix.statsmanager.ui.permissions.SyncStatusText
+import com.lumetrix.statsmanager.ui.permissions.UsageAccessBanner
+import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
-import com.lumetrix.statsmanager.ui.theme.Danger
 import com.lumetrix.statsmanager.ui.theme.LumetrixTokens
 import com.lumetrix.statsmanager.ui.theme.Success
 import com.lumetrix.statsmanager.ui.theme.TextPrimary
 import com.lumetrix.statsmanager.ui.theme.TextSecondary
-import com.lumetrix.statsmanager.ui.theme.Warning
 
 @Composable
 fun DashboardScreen(
     modifier: Modifier = Modifier,
-    userName: String = "Alex",
-    greeting: String = "Good Evening",
+    viewModel: DashboardViewModel = hiltViewModel(),
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onResume()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (uiState.isLoading) {
+        Column(
+            modifier = modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(color = AccentPrimary)
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -55,15 +89,30 @@ fun DashboardScreen(
         ) {
             Column {
                 Text(
-                    text = greeting,
+                    text = uiState.greeting,
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextSecondary,
                 )
                 Text(
-                    text = userName,
+                    text = uiState.userName,
                     style = MaterialTheme.typography.headlineLarge,
                     color = TextPrimary,
                 )
+                SyncStatusText(isSyncing = uiState.isSyncing)
+                uiState.lastSyncedLabel?.let { label ->
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                    )
+                }
+                uiState.syncError?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = com.lumetrix.statsmanager.ui.theme.Danger,
+                    )
+                }
             }
             Surface(
                 modifier = Modifier.size(48.dp),
@@ -72,7 +121,7 @@ fun DashboardScreen(
             ) {
                 androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = userName.first().uppercase(),
+                        text = uiState.userName.first().uppercase(),
                         style = MaterialTheme.typography.titleLarge,
                         color = AccentSecondary,
                     )
@@ -80,8 +129,12 @@ fun DashboardScreen(
             }
         }
 
+        if (!uiState.hasUsageAccess) {
+            UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
+        }
+
         FocusScoreOrb(
-            score = 84,
+            score = uiState.focusScore,
             label = "Focus Score",
             modifier = Modifier
                 .fillMaxWidth()
@@ -91,17 +144,17 @@ fun DashboardScreen(
         GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "AI Insight",
+                    text = "Insight",
                     style = MaterialTheme.typography.labelMedium,
                     color = AccentSecondary,
                 )
                 Text(
-                    text = "Your focus improved 18% this week",
+                    text = uiState.insightTitle,
                     style = MaterialTheme.typography.titleLarge,
                     color = TextPrimary,
                 )
                 Text(
-                    text = "Peak productivity detected between 9–11 AM",
+                    text = uiState.insightSubtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
@@ -110,13 +163,26 @@ fun DashboardScreen(
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Screen Time",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Screen Time",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                    )
+                    Text(
+                        text = uiState.totalScreenTimeLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AccentSecondary,
+                    )
+                }
                 NeonLineChart(
-                    data = listOf(2.1f, 3.4f, 2.8f, 4.2f, 3.6f, 5.1f, 4.4f),
+                    data = uiState.weeklyScreenTimeHours.ifEmpty {
+                        listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f)
+                    },
                 )
             }
         }
@@ -127,24 +193,29 @@ fun DashboardScreen(
             color = TextPrimary,
         )
 
-        AppUsageCard(
-            appName = "Instagram",
-            duration = "2h 14m",
-            category = "Distracting",
-            categoryColor = Danger,
-        )
-        AppUsageCard(
-            appName = "Notion",
-            duration = "1h 42m",
-            category = "Productive",
-            categoryColor = Success,
-        )
-        AppUsageCard(
-            appName = "Spotify",
-            duration = "58m",
-            category = "Neutral",
-            categoryColor = Warning,
-        )
+        if (uiState.topApps.isEmpty()) {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = if (uiState.hasUsageAccess) {
+                        "No app usage recorded yet today."
+                    } else {
+                        "Grant usage access to see your top apps."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
+        } else {
+            uiState.topApps.forEach { app ->
+                AppUsageCard(
+                    appName = app.appName,
+                    duration = app.durationLabel,
+                    category = app.category.label,
+                    categoryColor = app.categoryColor,
+                    onCategoryClick = { viewModel.cycleAppCategory(app.packageName) },
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -152,12 +223,12 @@ fun DashboardScreen(
         ) {
             StatCard(
                 label = "Unlocks",
-                value = "47",
+                value = uiState.unlockCount.toString(),
                 modifier = Modifier.weight(1f),
             )
             StatCard(
                 label = "Notifications",
-                value = "128",
+                value = uiState.notificationCount.toString(),
                 modifier = Modifier.weight(1f),
                 accent = AccentSecondary,
             )
@@ -169,12 +240,12 @@ fun DashboardScreen(
         ) {
             StatCard(
                 label = "Pickups",
-                value = "63",
+                value = uiState.pickupCount.toString(),
                 modifier = Modifier.weight(1f),
             )
             StatCard(
                 label = "Focus Time",
-                value = "3h 12m",
+                value = uiState.focusTimeLabel,
                 modifier = Modifier.weight(1f),
                 accent = Success,
             )

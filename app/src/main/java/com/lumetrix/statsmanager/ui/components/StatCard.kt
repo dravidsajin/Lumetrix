@@ -1,5 +1,7 @@
 package com.lumetrix.statsmanager.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,6 +52,7 @@ fun AppUsageCard(
     categoryColor: Color,
     modifier: Modifier = Modifier,
     iconLetter: String = appName.first().uppercase(),
+    onCategoryClick: (() -> Unit)? = null,
 ) {
     GlassCard(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -87,7 +90,19 @@ fun AppUsageCard(
                 text = category,
                 style = MaterialTheme.typography.labelMedium,
                 color = categoryColor,
-                modifier = Modifier.padding(start = 4.dp),
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .then(
+                        if (onCategoryClick != null) {
+                            Modifier.clickable(
+                                interactionSource = MutableInteractionSource(),
+                                indication = null,
+                                onClick = onCategoryClick,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         }
     }

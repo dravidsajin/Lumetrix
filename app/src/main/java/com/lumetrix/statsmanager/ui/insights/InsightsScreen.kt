@@ -13,18 +13,31 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Nightlight
 import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lumetrix.statsmanager.domain.model.InsightIcon
 import com.lumetrix.statsmanager.ui.components.DonutChart
 import com.lumetrix.statsmanager.ui.components.DonutSegment
 import com.lumetrix.statsmanager.ui.components.GlassCard
 import com.lumetrix.statsmanager.ui.components.GradientGlassCard
 import com.lumetrix.statsmanager.ui.components.NeonLineChart
+import com.lumetrix.statsmanager.ui.permissions.SyncStatusText
+import com.lumetrix.statsmanager.ui.permissions.UsageAccessBanner
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
 import com.lumetrix.statsmanager.ui.theme.Danger
@@ -35,7 +48,33 @@ import com.lumetrix.statsmanager.ui.theme.TextSecondary
 import com.lumetrix.statsmanager.ui.theme.Warning
 
 @Composable
-fun InsightsScreen(modifier: Modifier = Modifier) {
+fun InsightsScreen(
+    modifier: Modifier = Modifier,
+    viewModel: InsightsViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResume()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (uiState.isLoading) {
+        Column(
+            modifier = modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(color = AccentPrimary)
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -55,6 +94,14 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyLarge,
             color = TextSecondary,
         )
+        uiState.lastSyncedLabel?.let { label ->
+            Text(text = label, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        }
+        SyncStatusText(isSyncing = uiState.isSyncing)
+
+        if (!uiState.hasUsageAccess) {
+            UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
+        }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -64,7 +111,9 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
                     color = TextPrimary,
                 )
                 NeonLineChart(
-                    data = listOf(3.2f, 4.1f, 3.8f, 5.0f, 4.6f, 3.9f, 4.8f),
+                    data = uiState.weeklyScreenTimeHours.ifEmpty {
+                        listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f)
+                    },
                 )
             }
         }
@@ -78,9 +127,9 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
                 )
                 DonutChart(
                     segments = listOf(
-                        DonutSegment("Productive", 52f, Success),
-                        DonutSegment("Neutral", 28f, Warning),
-                        DonutSegment("Distracting", 20f, Danger),
+                        DonutSegment("Productive", uiState.productivePercent.toFloat(), Success),
+                        DonutSegment("Neutral", uiState.neutralPercent.toFloat(), Warning),
+                        DonutSegment("Distracting", uiState.distractingPercent.toFloat(), Danger),
                     ),
                 )
             }
@@ -92,40 +141,36 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
             color = TextPrimary,
         )
 
-        InsightCard(
-            icon = Icons.Outlined.Nightlight,
-            title = "You scroll more after 10 PM",
-            subtitle = "Late-night usage increased 24% this week",
-        )
-        InsightCard(
-            icon = Icons.Outlined.Bedtime,
-            title = "Peak distraction at 11:42 PM",
-            subtitle = "Consider enabling wind-down focus mode",
-        )
+        uiState.behavioralInsights.forEach { insight ->
+            InsightCard(
+                icon = insight.iconKey.toIcon(),
+                title = insight.title,
+                subtitle = insight.subtitle,
+            )
+        }
 
         Text(
-            text = "AI Recommendations",
+            text = "Recommendations",
             style = MaterialTheme.typography.titleMedium,
             color = TextPrimary,
         )
 
-        GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
-            RecommendationCard(
-                title = "Reduce social media",
-                body = "Limit Instagram to 45 minutes daily to improve focus score.",
-            )
-        }
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            RecommendationCard(
-                title = "Optimize focus hours",
-                body = "Schedule deep work between 9–11 AM when productivity peaks.",
-            )
-        }
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            RecommendationCard(
-                title = "Improve sleep timing",
-                body = "Wind down screen usage 30 minutes earlier for better recovery.",
-            )
+        uiState.recommendations.forEachIndexed { index, recommendation ->
+            if (index == 0) {
+                GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
+                    RecommendationCard(
+                        title = recommendation.title,
+                        body = recommendation.body,
+                    )
+                }
+            } else {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    RecommendationCard(
+                        title = recommendation.title,
+                        body = recommendation.body,
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(100.dp))
@@ -140,45 +185,25 @@ private fun InsightCard(
 ) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = AccentPrimary,
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
+            Icon(imageVector = icon, contentDescription = null, tint = AccentPrimary)
+            Text(text = title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+            Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
     }
 }
 
 @Composable
-private fun RecommendationCard(
-    title: String,
-    body: String,
-) {
+private fun RecommendationCard(title: String, body: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(
-            imageVector = Icons.Outlined.Psychology,
-            contentDescription = null,
-            tint = AccentSecondary,
-        )
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-        )
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
-        )
+        Icon(imageVector = Icons.Outlined.Psychology, contentDescription = null, tint = AccentSecondary)
+        Text(text = title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+        Text(text = body, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
     }
+}
+
+private fun InsightIcon.toIcon(): ImageVector = when (this) {
+    InsightIcon.Night -> Icons.Outlined.Nightlight
+    InsightIcon.Bedtime -> Icons.Outlined.Bedtime
+    InsightIcon.Trending -> Icons.Outlined.TrendingUp
+    InsightIcon.Psychology -> Icons.Outlined.Psychology
 }
