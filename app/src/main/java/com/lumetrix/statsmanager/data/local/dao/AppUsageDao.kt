@@ -76,4 +76,13 @@ interface AppUsageDao {
         """,
     )
     suspend fun getTopApp(dayKey: Int): AppUsageEntity?
+
+    @Query(
+        """
+        SELECT * FROM app_usage_records
+        WHERE package_name = :packageName AND usage_date BETWEEN :startDayKey AND :endDayKey
+        ORDER BY usage_date ASC
+        """,
+    )
+    fun observeAppUsageHistory(packageName: String, startDayKey: Int, endDayKey: Int): Flow<List<AppUsageEntity>>
 }

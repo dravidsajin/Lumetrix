@@ -44,18 +44,14 @@ class DashboardMapper @Inject constructor() {
         }
     }
 
-    fun computeCategoryBreakdown(apps: List<AppUsageEntity>): Triple<Int, Int, Int> {
-        val total = apps.sumOf { it.usageDurationMs }.coerceAtLeast(1L)
+    fun computeCategoryBreakdown(apps: List<AppUsageEntity>): Triple<Long, Long, Long> {
         val productive = apps.filter { AppCategory.fromStorageKey(it.category) == AppCategory.Productive }
             .sumOf { it.usageDurationMs }
         val distracting = apps.filter { AppCategory.fromStorageKey(it.category) == AppCategory.Distracting }
             .sumOf { it.usageDurationMs }
+        val total = apps.sumOf { it.usageDurationMs }
         val neutral = total - productive - distracting
-        return Triple(
-            (productive * 100 / total).toInt(),
-            (neutral * 100 / total).toInt(),
-            (distracting * 100 / total).toInt(),
-        )
+        return Triple(productive, neutral, distracting)
     }
 
     private fun AppCategory.toColor() = when (this) {

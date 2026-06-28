@@ -22,4 +22,13 @@ interface ScreenSessionDao {
         """,
     )
     suspend fun getTotalScreenTimeMs(dayKey: Int): Long
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(duration_ms), 0)
+        FROM screen_sessions
+        WHERE session_date = :dayKey
+        """,
+    )
+    fun observeTotalScreenTimeMs(dayKey: Int): kotlinx.coroutines.flow.Flow<Long>
 }

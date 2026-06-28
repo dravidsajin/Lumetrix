@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -78,9 +79,8 @@ fun InsightsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
             .padding(horizontal = LumetrixTokens.ScreenPadding),
-        verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing),
     ) {
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -99,9 +99,18 @@ fun InsightsScreen(
         }
         SyncStatusText(isSyncing = uiState.isSyncing)
 
-        if (!uiState.hasUsageAccess) {
-            UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
-        }
+        Spacer(modifier = Modifier.height(LumetrixTokens.CardSpacing))
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing),
+        ) {
+            if (!uiState.hasUsageAccess) {
+                UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
+            }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -113,6 +122,16 @@ fun InsightsScreen(
                 NeonLineChart(
                     data = uiState.weeklyScreenTimeHours.ifEmpty {
                         listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f)
+                    }.mapIndexed { index, value ->
+                        val labels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                        com.lumetrix.statsmanager.domain.model.ChartDataPoint(
+                            dayLabel = labels.getOrElse(index) { "${index + 1}" },
+                            value = value,
+                            formattedLabel = if (value > 0f) {
+                                val totalMinutes = (value * 60).toInt()
+                                if (totalMinutes >= 60) "${totalMinutes / 60}h ${totalMinutes % 60}m" else "${totalMinutes}m"
+                            } else "0m"
+                        )
                     },
                 )
             }
@@ -174,7 +193,8 @@ fun InsightsScreen(
         }
 
         Spacer(modifier = Modifier.height(100.dp))
-    }
+        } // Close inner scroll column
+    } // Close outer column
 }
 
 @Composable

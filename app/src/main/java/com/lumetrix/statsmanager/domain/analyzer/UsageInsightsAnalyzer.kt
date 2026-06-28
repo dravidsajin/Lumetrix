@@ -107,10 +107,15 @@ class UsageInsightsAnalyzer @Inject constructor(
             )
         }
 
+        val totalMs = (productive + neutral + distracting).coerceAtLeast(1L)
+        val prodPercent = (productive * 100 / totalMs).toInt()
+        val neutPercent = (neutral * 100 / totalMs).toInt()
+        val distPercent = (distracting * 100 / totalMs).toInt()
+
         return InsightsAnalysis(
-            productivePercent = productive,
-            neutralPercent = neutral,
-            distractingPercent = distracting,
+            productivePercent = prodPercent,
+            neutralPercent = neutPercent,
+            distractingPercent = distPercent,
             behavioralInsights = insights.ifEmpty {
                 listOf(
                     BehavioralInsightItem(

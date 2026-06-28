@@ -16,26 +16,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import com.lumetrix.statsmanager.ui.appdetails.AppDetailsScreen
+import com.lumetrix.statsmanager.ui.apps.AppsScreen
 import com.lumetrix.statsmanager.ui.components.AmbientBackground
 import com.lumetrix.statsmanager.ui.components.FloatingBottomBar
 import com.lumetrix.statsmanager.ui.dashboard.DashboardScreen
 import com.lumetrix.statsmanager.ui.focus.FocusScreen
 import com.lumetrix.statsmanager.ui.insights.InsightsScreen
+import com.lumetrix.statsmanager.ui.profile.ProfileScreen
 import com.lumetrix.statsmanager.ui.navigation.LumetrixDestination
 import com.lumetrix.statsmanager.ui.navigation.lumetrixBottomNavItems
 import com.lumetrix.statsmanager.ui.navigation.lumetrixTabTransition
-import com.lumetrix.statsmanager.ui.profile.ProfileScreen
 import com.lumetrix.statsmanager.ui.theme.LumetrixMotion
 import com.lumetrix.statsmanager.ui.theme.LumetrixTokens
 
 @Composable
 fun LumetrixApp() {
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
+    var appDetailsPackageName by rememberSaveable { mutableStateOf<String?>(null) }
     val systemNavInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomBarReserve = LumetrixTokens.BottomNavHeight +
         LumetrixTokens.BottomNavBottomPadding +
@@ -45,27 +49,46 @@ fun LumetrixApp() {
         AmbientBackground(modifier = Modifier.fillMaxSize())
 
         AnimatedContent(
-            targetState = selectedIndex,
-            transitionSpec = { lumetrixTabTransition() },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = bottomBarReserve),
-            label = "mainTabTransition",
-        ) { index ->
-            when (LumetrixDestination.entries[index]) {
-                LumetrixDestination.Dashboard -> DashboardScreen()
-                LumetrixDestination.Insights -> InsightsScreen()
-                LumetrixDestination.Focus -> FocusScreen()
-                LumetrixDestination.Profile -> ProfileScreen()
+            targetState = appDetailsPackageName,
+            label = "appDetailsTransition"
+        ) { targetPackage ->
+            if (targetPackage != null) {
+                AppDetailsScreen(
+                    packageName = targetPackage,
+                    onNavigateBack = { appDetailsPackageName = null }
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AnimatedContent(
+                        targetState = selectedIndex,
+                        transitionSpec = { lumetrixTabTransition() },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = bottomBarReserve),
+                        label = "mainTabTransition",
+                    ) { index ->
+                        when (LumetrixDestination.entries[index]) {
+                            LumetrixDestination.Pulse -> DashboardScreen(
+                                onNavigateToAppDetails = { appDetailsPackageName = it }
+                            )
+                            LumetrixDestination.Apps -> AppsScreen(
+                                onNavigateToAppDetails = { appDetailsPackageName = it }
+                            )
+                            LumetrixDestination.Focus -> FocusScreen()
+                            LumetrixDestination.Insights -> InsightsScreen()
+                            LumetrixDestination.Profile -> ProfileScreen()
+                        }
+                    }
+
+                    FloatingBottomBar(
+                        items = lumetrixBottomNavItems(),
+                        selectedIndex = selectedIndex,
+                        onItemSelected = { selectedIndex = it },
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
             }
         }
-
-        FloatingBottomBar(
-            items = lumetrixBottomNavItems(),
-            selectedIndex = selectedIndex,
-            onItemSelected = { selectedIndex = it },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
     }
 }
 

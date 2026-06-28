@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -73,15 +74,30 @@ fun ProfileScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
             .padding(horizontal = LumetrixTokens.ScreenPadding),
-        verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing),
     ) {
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (!uiState.hasUsageAccess) {
-            UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
-        }
+        Text(
+            text = "Profile",
+            style = MaterialTheme.typography.headlineLarge,
+            color = TextPrimary,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(modifier = Modifier.height(LumetrixTokens.CardSpacing))
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing),
+        ) {
+            if (!uiState.hasUsageAccess) {
+                UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
+            }
 
         GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -157,7 +173,8 @@ fun ProfileScreen(
         }
 
         Spacer(modifier = Modifier.height(100.dp))
-    }
+        } // Close inner scroll column
+    } // Close outer column
 }
 
 @Composable

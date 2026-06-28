@@ -22,6 +22,10 @@ import com.lumetrix.statsmanager.domain.model.DashboardUiState
 import com.lumetrix.statsmanager.domain.model.InsightsUiState
 import com.lumetrix.statsmanager.domain.model.ProfileUiState
 import com.lumetrix.statsmanager.domain.model.AppCategory
+import com.lumetrix.statsmanager.domain.model.AppDetailsUiState
+import com.lumetrix.statsmanager.domain.model.ChartDataPoint
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -49,14 +53,14 @@ class UsageTrackingRepository @Inject constructor(
         val weekStartKey = DateUtils.toDayKey(today.minusDays(6))
 
         val dashboardData = combine(
-            appUsageDao.observeTopApps(todayKey, limit = 5),
-            appUsageDao.observeTotalUsageMs(todayKey),
+            appUsageDao.observeAllUsageBetween(todayKey, todayKey),
+            screenSessionDao.observeTotalScreenTimeMs(todayKey),
             dailySummaryDao.observeSummary(todayKey),
             dailySummaryDao.observeSummariesBetween(weekStartKey, todayKey),
             unlockEventDao.observeUnlockCount(todayKey),
-        ) { topApps, totalMs, summary, weekSummaries, unlockCount ->
+        ) { allApps, totalMs, summary, weekSummaries, unlockCount ->
             DashboardSnapshot(
-                topApps = topApps,
+                allApps = allApps,
                 totalMs = totalMs,
                 summary = summary,
                 weekSummaries = weekSummaries,
@@ -67,7 +71,13 @@ class UsageTrackingRepository @Inject constructor(
         return combine(dashboardData, syncMetadataDao.observeMetadata()) { snapshot, syncMetadata ->
             val hasAccess = usageAccessChecker.hasUsageAccess()
             val focusScore = snapshot.summary?.focusScore
-                ?: dashboardMapper.computeFocusScore(snapshot.totalMs, snapshot.topApps)
+                ?: dashboardMapper.computeFocusScore(snapshot.totalMs, snapshot.allApps)
+            val categoryBreakdown = dashboardMapper.computeCategoryBreakdown(snapshot.allApps)
+            
+            val yesterdaySummary = snapshot.weekSummaries.find { it.summaryDate == DateUtils.toDayKey(today.minusDays(1)) }
+            val focusScoreDelta = yesterdaySummary?.let { focusScore - it.focusScore }
+            val top5Apps = snapshot.allApps.sortedByDescending { it.usageDurationMs }.take(5)
+            
             val (insightTitle, insightSubtitle) = if (!hasAccess) {
                 "Grant usage access" to "Enable usage access in settings to see your real screen time and app stats."
             } else {
@@ -86,12 +96,20 @@ class UsageTrackingRepository @Inject constructor(
                 } else {
                     emptyList()
                 },
-                topApps = if (hasAccess) dashboardMapper.toAppUsageItems(snapshot.topApps) else emptyList(),
+                topApps = if (hasAccess) dashboardMapper.toAppUsageItems(top5Apps) else emptyList(),
                 unlockCount = if (hasAccess) snapshot.summary?.unlockCount ?: snapshot.unlockCount else 0,
                 notificationCount = if (hasAccess) snapshot.summary?.notificationCount ?: 0 else 0,
                 pickupCount = if (hasAccess) snapshot.summary?.pickupCount ?: snapshot.unlockCount else 0,
                 focusTimeLabel = if (hasAccess) DurationFormatter.formatShort(snapshot.totalMs) else "—",
                 totalScreenTimeLabel = if (hasAccess) DurationFormatter.formatShort(snapshot.totalMs) else "—",
+                productiveMs = if (hasAccess) categoryBreakdown.first else 0L,
+                neutralMs = if (hasAccess) categoryBreakdown.second else 0L,
+                distractingMs = if (hasAccess) categoryBreakdown.third else 0L,
+                productiveLabel = if (hasAccess) DurationFormatter.formatShort(categoryBreakdown.first) else "0m",
+                neutralLabel = if (hasAccess) DurationFormatter.formatShort(categoryBreakdown.second) else "0m",
+                distractingLabel = if (hasAccess) DurationFormatter.formatShort(categoryBreakdown.third) else "0m",
+                longestSessionLabel = "—",
+                focusScoreDelta = focusScoreDelta,
                 lastSyncedLabel = SyncLabelFormatter.formatLastSynced(syncMetadata?.lastSuccessAt),
                 syncError = syncMetadata?.lastError?.takeIf {
                     syncMetadata.lastStatus == SyncMetadataEntity.STATUS_FAILED
@@ -123,7 +141,7 @@ class UsageTrackingRepository @Inject constructor(
                 InsightsUiState(
                     hasUsageAccess = true,
                     isLoading = false,
-                    weeklyScreenTimeHours = buildWeeklyChart(weekSummaries, weekStartKey, todayKey),
+                    weeklyScreenTimeHours = buildWeeklyChart(weekSummaries, weekStartKey, todayKey).map { it.value },
                     productivePercent = analysis.productivePercent,
                     neutralPercent = analysis.neutralPercent,
                     distractingPercent = analysis.distractingPercent,
@@ -132,6 +150,56 @@ class UsageTrackingRepository @Inject constructor(
                     lastSyncedLabel = SyncLabelFormatter.formatLastSynced(syncMetadata?.lastSuccessAt),
                 )
             }
+        }.distinctUntilChanged()
+    }
+
+    fun observeAppDetailsState(packageName: String): Flow<AppDetailsUiState> {
+        val today = DateUtils.today()
+        val todayKey = DateUtils.toDayKey(today)
+        val weekStartKey = DateUtils.toDayKey(today.minusDays(6))
+
+        return combine(
+            appUsageDao.observeAppUsageHistory(packageName, weekStartKey, todayKey),
+            appCategoryRepository.observeCategoryChanges(),
+        ) { history, categoryOverrides ->
+            if (history.isEmpty()) {
+                return@combine AppDetailsUiState(isLoading = false, packageName = packageName)
+            }
+            
+            val todayUsage = history.find { it.usageDate == todayKey }
+            val appName = history.first().appName
+            val categoryOverride = categoryOverrides.find { it.packageName == packageName }
+            val category = categoryOverride?.let { AppCategory.fromStorageKey(it.category) } ?: AppCategory.Neutral
+
+            val todayDurationLabel = todayUsage?.let { DurationFormatter.formatShort(it.usageDurationMs) } ?: "0m"
+            
+            val chartPoints = mutableListOf<ChartDataPoint>()
+            var currentDate = today.minusDays(6)
+            while (!currentDate.isAfter(today)) {
+                val dateKey = DateUtils.toDayKey(currentDate)
+                val usage = history.find { it.usageDate == dateKey }?.usageDurationMs ?: 0L
+                val hours = usage / (1000f * 60 * 60)
+                chartPoints.add(
+                    ChartDataPoint(
+                        dayLabel = currentDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                        value = hours,
+                        formattedLabel = DurationFormatter.formatShort(usage)
+                    )
+                )
+                currentDate = currentDate.plusDays(1)
+            }
+
+            AppDetailsUiState(
+                isLoading = false,
+                packageName = packageName,
+                appName = appName,
+                category = category,
+                categoryColor = category.toColor(),
+                todayDurationLabel = todayDurationLabel,
+                todaySessionCount = 0,
+                averageSessionLabel = "0m",
+                weeklyUsageChart = chartPoints,
+            )
         }.distinctUntilChanged()
     }
 
@@ -195,6 +263,12 @@ class UsageTrackingRepository @Inject constructor(
         return category
     }
 
+    suspend fun setAppCategory(packageName: String, category: AppCategory) {
+        appCategoryRepository.setUserCategory(packageName, category)
+        appUsageDao.updateCategoryForPackage(packageName, category.storageKey)
+        recomputeDailySummary(DateUtils.today())
+    }
+
     suspend fun recordUnlock(unlockType: String = "device_unlock") {
         val now = System.currentTimeMillis()
         val latest = unlockEventDao.getLatestTimestamp()
@@ -236,7 +310,9 @@ class UsageTrackingRepository @Inject constructor(
         val topApps = appUsageDao.getUsageBetween(dayKey, dayKey)
         val totalFromApps = appUsageDao.getTotalUsageMs(dayKey)
         val totalFromScreen = screenSessionDao.getTotalScreenTimeMs(dayKey)
-        val totalScreenMs = maxOf(totalFromApps, totalFromScreen)
+        // Only fallback to apps if screen time is 0, but cap it at 24 hours to avoid overlapping inflation
+        val maxMsInDay = 24 * 60 * 60 * 1000L
+        val totalScreenMs = if (totalFromScreen > 0) totalFromScreen else totalFromApps.coerceAtMost(maxMsInDay)
         val topApp = appUsageDao.getTopApp(dayKey)
         val unlockCount = unlockEventDao.getUnlockCount(dayKey)
         val focusScore = dashboardMapper.computeFocusScore(totalScreenMs, topApps)
@@ -325,11 +401,18 @@ class UsageTrackingRepository @Inject constructor(
         summaries: List<DailySummaryEntity>,
         startKey: Int,
         endKey: Int,
-    ): List<Float> {
+    ): List<ChartDataPoint> {
         val byDay = summaries.associateBy { it.summaryDate }
         return DateUtils.lastNDays(DateUtils.fromDayKey(endKey), count = 7).map { date ->
             val key = DateUtils.toDayKey(date)
-            DurationFormatter.formatHoursForChart(byDay[key]?.totalScreenTimeMs ?: 0L)
+            val totalMs = byDay[key]?.totalScreenTimeMs ?: 0L
+            val value = DurationFormatter.formatHoursForChart(totalMs)
+            val dayLabel = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+            ChartDataPoint(
+                dayLabel = dayLabel,
+                value = value,
+                formattedLabel = if (totalMs > 0) DurationFormatter.formatShort(totalMs) else "0m"
+            )
         }
     }
 
@@ -367,8 +450,14 @@ class UsageTrackingRepository @Inject constructor(
     }
 }
 
+private fun AppCategory.toColor() = when (this) {
+    AppCategory.Productive -> com.lumetrix.statsmanager.ui.theme.Success
+    AppCategory.Distracting -> com.lumetrix.statsmanager.ui.theme.Danger
+    AppCategory.Neutral -> com.lumetrix.statsmanager.ui.theme.Warning
+}
+
 private data class DashboardSnapshot(
-    val topApps: List<AppUsageEntity>,
+    val allApps: List<AppUsageEntity>,
     val totalMs: Long,
     val summary: DailySummaryEntity?,
     val weekSummaries: List<DailySummaryEntity>,
