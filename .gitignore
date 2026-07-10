@@ -1,0 +1,64 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/gradle.xml
+.idea/compiler.xml
+.idea/misc.xml
+.idea/deploymentTargetDropDown.xml
+.idea/deploymentTargetSelector.xml
+
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local SDK path (machine-specific)
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Android NDK / native
+.externalNativeBuild/
+.cxx/
+captures/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and reports
+*.log
+output.json
+
+# Room schema exports are committed under app/schemas/ for migration history
+
+# Keystore files — never commit signing keys
+*.jks
+*.keystore
+
+# Google Services (add when Firebase/Drive is integrated)
+# google-services.json
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Backup files
+*~
+*.swp
+*.bak
