@@ -4,8 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import com.lumetrix.statsmanager.data.local.AppDatabase
 import com.lumetrix.statsmanager.data.local.dao.AppCategoryDao
+import com.lumetrix.statsmanager.data.local.dao.AppChainRuleDao
 import com.lumetrix.statsmanager.data.local.dao.AppUsageDao
 import com.lumetrix.statsmanager.data.local.dao.DailySummaryDao
+import com.lumetrix.statsmanager.data.local.dao.FocusPointsDao
+import com.lumetrix.statsmanager.data.local.dao.FocusSessionDao
 import com.lumetrix.statsmanager.data.local.dao.ScreenSessionDao
 import com.lumetrix.statsmanager.data.local.dao.SyncMetadataDao
 import com.lumetrix.statsmanager.data.local.dao.UnlockEventDao
@@ -57,4 +60,17 @@ object DatabaseModule {
     @Provides
     fun provideSyncMetadataDao(database: AppDatabase): SyncMetadataDao =
         database.syncMetadataDao()
+
+    @Provides
+    fun provideFocusSessionDao(database: AppDatabase): FocusSessionDao =
+        database.focusSessionDao()
+
+    @Provides
+    fun provideFocusPointsDao(database: AppDatabase): FocusPointsDao =
+        database.focusPointsDao()
+
+    @Provides
+    fun provideAppChainRuleDao(database: AppDatabase): AppChainRuleDao =
+        database.appChainRuleDao()
 }
+

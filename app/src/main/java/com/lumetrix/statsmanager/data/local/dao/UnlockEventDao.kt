@@ -38,4 +38,9 @@ interface UnlockEventDao {
         """,
     )
     suspend fun getUnlockCountBetween(startDayKey: Int, endDayKey: Int): Int
+
+    /** Returns full unlock event records for a given day (used by GhostPickupAnalyzer). */
+    @Query("SELECT * FROM unlock_events WHERE event_date = :dayKey ORDER BY timestamp_ms ASC")
+    suspend fun getUnlockEventsForDate(dayKey: Int): List<com.lumetrix.statsmanager.data.local.entity.UnlockEventEntity>
 }
+

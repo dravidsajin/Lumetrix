@@ -37,4 +37,7 @@ data class DailySummaryEntity(
     val focusScore: Int,
     @ColumnInfo(name = "computed_at")
     val computedAt: Long,
+    /** Unlocks where no notification was received in the prior ~60 seconds (approximated). */
+    @ColumnInfo(name = "ghost_pickups")
+    val ghostPickups: Int = 0,
 )

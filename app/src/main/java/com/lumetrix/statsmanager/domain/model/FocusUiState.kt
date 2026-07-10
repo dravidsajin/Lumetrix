@@ -11,7 +11,19 @@ data class FocusUiState(
     val selectedDurationMinutes: Int = 25,
     val selectedMode: String = "Deep Work",
     val remainingTimeMillis: Long = 25 * 60 * 1000L,
-    val distractingAppsCount: Int = 0
+    val distractingAppsCount: Int = 0,
+
+    // Feature 5: Focus Points Economy
+    val focusPointsBalance: Int = 0,
+    val pointsJustEarned: Int = 0,   // animates on session complete
+
+    // Feature 6: App Chain Rules
+    val chainRules: List<AppChainRule> = emptyList(),
+
+    // Feature 7: Pomodoro Stats
+    val recentSessions: List<FocusSessionItem> = emptyList(),
+    val weeklyCompletedSessions: Int = 0,
+    val weeklySuccessRate: Int = 0,
 ) {
     val remainingTimeLabel: String
         get() {
@@ -21,3 +33,4 @@ data class FocusUiState(
             return String.format("%02d:%02d", minutes, seconds)
         }
 }
+

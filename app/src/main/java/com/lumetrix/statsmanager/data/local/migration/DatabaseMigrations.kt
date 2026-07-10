@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  */
 object DatabaseMigrations {
 
-    const val CURRENT_VERSION = 2
+    const val CURRENT_VERSION = 3
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -64,7 +64,77 @@ object DatabaseMigrations {
         }
     }
 
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Feature 3: Ghost Pickup Detector
+            db.execSQL(
+                """
+                ALTER TABLE daily_summaries
+                ADD COLUMN ghost_pickups INTEGER NOT NULL DEFAULT 0
+                """.trimIndent(),
+            )
+
+            // Feature 7: Focus Session History (Pomodoro Stats)
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS focus_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    start_time_ms INTEGER NOT NULL,
+                    end_time_ms INTEGER NOT NULL,
+                    mode TEXT NOT NULL,
+                    planned_duration_min INTEGER NOT NULL,
+                    was_completed INTEGER NOT NULL,
+                    points_earned INTEGER NOT NULL,
+                    session_date INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_focus_sessions_session_date
+                ON focus_sessions (session_date)
+                """.trimIndent(),
+            )
+
+            // Feature 5: Focus Points Economy
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS focus_points (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    delta INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    timestamp_ms INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+
+            // Feature 6: App Chaining Rules
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS app_chain_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    gate_package TEXT NOT NULL,
+                    gate_app_name TEXT NOT NULL,
+                    gate_duration_min INTEGER NOT NULL,
+                    target_package TEXT NOT NULL,
+                    target_app_name TEXT NOT NULL,
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS index_app_chain_rules_gate_target
+                ON app_chain_rules (gate_package, target_package)
+                """.trimIndent(),
+            )
+        }
+    }
+
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
+        MIGRATION_2_3,
     )
 }
+

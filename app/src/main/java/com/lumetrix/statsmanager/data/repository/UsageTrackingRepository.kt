@@ -4,32 +4,45 @@ import com.lumetrix.statsmanager.core.time.DateUtils
 import com.lumetrix.statsmanager.core.time.DurationFormatter
 import com.lumetrix.statsmanager.core.time.GreetingUtils
 import com.lumetrix.statsmanager.core.time.SyncLabelFormatter
+import com.lumetrix.statsmanager.data.local.dao.AppChainRuleDao
 import com.lumetrix.statsmanager.data.local.dao.AppUsageDao
 import com.lumetrix.statsmanager.data.local.dao.DailySummaryDao
+import com.lumetrix.statsmanager.data.local.dao.FocusPointsDao
+import com.lumetrix.statsmanager.data.local.dao.FocusSessionDao
 import com.lumetrix.statsmanager.data.local.dao.ScreenSessionDao
 import com.lumetrix.statsmanager.data.local.dao.SyncMetadataDao
 import com.lumetrix.statsmanager.data.local.dao.UnlockEventDao
+import com.lumetrix.statsmanager.data.local.entity.AppChainRuleEntity
 import com.lumetrix.statsmanager.data.local.entity.AppUsageEntity
 import com.lumetrix.statsmanager.data.local.entity.DailySummaryEntity
+import com.lumetrix.statsmanager.data.local.entity.FocusPointsEntity
+import com.lumetrix.statsmanager.data.local.entity.FocusSessionEntity
 import com.lumetrix.statsmanager.data.local.entity.SyncMetadataEntity
 import com.lumetrix.statsmanager.data.local.entity.UnlockEventEntity
 import com.lumetrix.statsmanager.data.tracking.UsageAccessChecker
 import com.lumetrix.statsmanager.data.tracking.UsageStatsCollector
+import com.lumetrix.statsmanager.domain.analyzer.DistractionIndexAnalyzer
+import com.lumetrix.statsmanager.domain.analyzer.GhostPickupAnalyzer
 import com.lumetrix.statsmanager.domain.analyzer.UsageInsightsAnalyzer
+import com.lumetrix.statsmanager.domain.evaluator.AppChainEvaluator
 import com.lumetrix.statsmanager.domain.mapper.DashboardMapper
 import com.lumetrix.statsmanager.domain.model.AchievementItem
-import com.lumetrix.statsmanager.domain.model.DashboardUiState
-import com.lumetrix.statsmanager.domain.model.InsightsUiState
-import com.lumetrix.statsmanager.domain.model.ProfileUiState
 import com.lumetrix.statsmanager.domain.model.AppCategory
+import com.lumetrix.statsmanager.domain.model.AppChainRule
 import com.lumetrix.statsmanager.domain.model.AppDetailsUiState
 import com.lumetrix.statsmanager.domain.model.ChartDataPoint
+import com.lumetrix.statsmanager.domain.model.DashboardUiState
+import com.lumetrix.statsmanager.domain.model.FocusSessionItem
+import com.lumetrix.statsmanager.domain.model.InsightsUiState
+import com.lumetrix.statsmanager.domain.model.ProfileUiState
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import java.time.LocalDate
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,21 +56,32 @@ class UsageTrackingRepository @Inject constructor(
     private val unlockEventDao: UnlockEventDao,
     private val screenSessionDao: ScreenSessionDao,
     private val syncMetadataDao: SyncMetadataDao,
+    private val focusSessionDao: FocusSessionDao,
+    private val focusPointsDao: FocusPointsDao,
+    private val appChainRuleDao: AppChainRuleDao,
     private val dashboardMapper: DashboardMapper,
     private val usageInsightsAnalyzer: UsageInsightsAnalyzer,
+    private val ghostPickupAnalyzer: GhostPickupAnalyzer,
+    private val distractionIndexAnalyzer: DistractionIndexAnalyzer,
+    private val appChainEvaluator: AppChainEvaluator,
 ) {
 
-    fun observeDashboardState(): Flow<DashboardUiState> {
+    // ─────────────────────────────────────────────────────────────
+    // Feature 1: Historical Day Browser — parameterize by date
+    // ─────────────────────────────────────────────────────────────
+
+    fun observeDashboardState(selectedDate: LocalDate = DateUtils.today()): Flow<DashboardUiState> {
         val today = DateUtils.today()
-        val todayKey = DateUtils.toDayKey(today)
-        val weekStartKey = DateUtils.toDayKey(today.minusDays(6))
+        val selectedKey = DateUtils.toDayKey(selectedDate)
+        val weekStartKey = DateUtils.toDayKey(selectedDate.minusDays(6))
+        val isViewingPastDay = selectedDate.isBefore(today)
 
         val dashboardData = combine(
-            appUsageDao.observeAllUsageBetween(todayKey, todayKey),
-            screenSessionDao.observeTotalScreenTimeMs(todayKey),
-            dailySummaryDao.observeSummary(todayKey),
-            dailySummaryDao.observeSummariesBetween(weekStartKey, todayKey),
-            unlockEventDao.observeUnlockCount(todayKey),
+            appUsageDao.observeAllUsageBetween(selectedKey, selectedKey),
+            screenSessionDao.observeTotalScreenTimeMs(selectedKey),
+            dailySummaryDao.observeSummary(selectedKey),
+            dailySummaryDao.observeSummariesBetween(weekStartKey, selectedKey),
+            unlockEventDao.observeUnlockCount(selectedKey),
         ) { allApps, totalMs, summary, weekSummaries, unlockCount ->
             DashboardSnapshot(
                 allApps = allApps,
@@ -73,26 +97,34 @@ class UsageTrackingRepository @Inject constructor(
             val focusScore = snapshot.summary?.focusScore
                 ?: dashboardMapper.computeFocusScore(snapshot.totalMs, snapshot.allApps)
             val categoryBreakdown = dashboardMapper.computeCategoryBreakdown(snapshot.allApps)
-            
-            val yesterdaySummary = snapshot.weekSummaries.find { it.summaryDate == DateUtils.toDayKey(today.minusDays(1)) }
-            val focusScoreDelta = yesterdaySummary?.let { focusScore - it.focusScore }
+
+            val prevDaySummary = snapshot.weekSummaries.find {
+                it.summaryDate == DateUtils.toDayKey(selectedDate.minusDays(1))
+            }
+            val focusScoreDelta = prevDaySummary?.let { focusScore - it.focusScore }
             val top5Apps = snapshot.allApps.sortedByDescending { it.usageDurationMs }.take(5)
-            
+
             val (insightTitle, insightSubtitle) = if (!hasAccess) {
                 "Grant usage access" to "Enable usage access in settings to see your real screen time and app stats."
             } else {
                 dashboardMapper.buildInsight(focusScore, snapshot.totalMs)
             }
 
+            // Feature 3: Ghost Pickup score from summary (pre-computed during sync)
+            val ghostPickups = snapshot.summary?.ghostPickups ?: 0
+            val habitScore = if (snapshot.unlockCount > 0) {
+                (100 - (ghostPickups.toFloat() / snapshot.unlockCount * 60f).toInt()).coerceIn(0, 100)
+            } else 100
+
             DashboardUiState(
-                greeting = GreetingUtils.greetingForNow(),
+                greeting = if (isViewingPastDay) formatDateLabel(selectedDate) else GreetingUtils.greetingForNow(),
                 hasUsageAccess = hasAccess,
                 isLoading = false,
                 focusScore = if (hasAccess) focusScore else 0,
                 insightTitle = insightTitle,
                 insightSubtitle = insightSubtitle,
                 weeklyScreenTimeHours = if (hasAccess) {
-                    buildWeeklyChart(snapshot.weekSummaries, weekStartKey, todayKey)
+                    buildWeeklyChart(snapshot.weekSummaries, weekStartKey, selectedKey)
                 } else {
                     emptyList()
                 },
@@ -114,9 +146,17 @@ class UsageTrackingRepository @Inject constructor(
                 syncError = syncMetadata?.lastError?.takeIf {
                     syncMetadata.lastStatus == SyncMetadataEntity.STATUS_FAILED
                 },
+                selectedDate = selectedDate,
+                isViewingPastDay = isViewingPastDay,
+                ghostPickups = if (hasAccess) ghostPickups else 0,
+                habitScore = if (hasAccess) habitScore else 100,
             )
         }.distinctUntilChanged()
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Insights (Feature 4: Distraction Index, Feature 7: Focus Stats)
+    // ─────────────────────────────────────────────────────────────
 
     fun observeInsightsState(): Flow<InsightsUiState> {
         val today = DateUtils.today()
@@ -128,7 +168,8 @@ class UsageTrackingRepository @Inject constructor(
             dailySummaryDao.observeSummariesBetween(weekStartKey, todayKey),
             syncMetadataDao.observeMetadata(),
             appCategoryRepository.observeCategoryChanges(),
-        ) { weekApps, weekSummaries, syncMetadata, _ ->
+            focusSessionDao.observeSessionsBetween(weekStartKey, todayKey),
+        ) { weekApps, weekSummaries, syncMetadata, _, focusSessions ->
             val hasAccess = usageAccessChecker.hasUsageAccess()
             if (!hasAccess) {
                 InsightsUiState(
@@ -138,6 +179,18 @@ class UsageTrackingRepository @Inject constructor(
                 )
             } else {
                 val analysis = usageInsightsAnalyzer.analyze(weekApps, weekSummaries, today)
+                val distractionAnalysis = distractionIndexAnalyzer.analyze(weekApps, weekSummaries)
+
+                val completedSessions = focusSessions.filter { it.wasCompleted }
+                val avgDurationMs = if (completedSessions.isNotEmpty()) {
+                    completedSessions.sumOf { it.endTimeMs - it.startTimeMs } / completedSessions.size
+                } else 0L
+                val successRate = if (focusSessions.isNotEmpty()) {
+                    (completedSessions.size * 100 / focusSessions.size)
+                } else 0
+
+                val sessionItems = focusSessions.take(5).map { toSessionItem(it, today) }
+
                 InsightsUiState(
                     hasUsageAccess = true,
                     isLoading = false,
@@ -148,6 +201,12 @@ class UsageTrackingRepository @Inject constructor(
                     behavioralInsights = analysis.behavioralInsights,
                     recommendations = analysis.recommendations,
                     lastSyncedLabel = SyncLabelFormatter.formatLastSynced(syncMetadata?.lastSuccessAt),
+                    distractionIndex = distractionAnalysis.index,
+                    distractionIndexLabel = distractionAnalysis.label,
+                    weeklyFocusSessions = focusSessions.size,
+                    focusSuccessRate = successRate,
+                    avgFocusSessionMin = (avgDurationMs / 60_000L).toInt(),
+                    recentFocusSessions = sessionItems,
                 )
             }
         }.distinctUntilChanged()
@@ -165,14 +224,14 @@ class UsageTrackingRepository @Inject constructor(
             if (history.isEmpty()) {
                 return@combine AppDetailsUiState(isLoading = false, packageName = packageName)
             }
-            
+
             val todayUsage = history.find { it.usageDate == todayKey }
             val appName = history.first().appName
             val categoryOverride = categoryOverrides.find { it.packageName == packageName }
             val category = categoryOverride?.let { AppCategory.fromStorageKey(it.category) } ?: AppCategory.Neutral
 
             val todayDurationLabel = todayUsage?.let { DurationFormatter.formatShort(it.usageDurationMs) } ?: "0m"
-            
+
             val chartPoints = mutableListOf<ChartDataPoint>()
             var currentDate = today.minusDays(6)
             while (!currentDate.isAfter(today)) {
@@ -215,6 +274,111 @@ class UsageTrackingRepository @Inject constructor(
                 buildProfileStateFromSummaries(summaries)
             }
         }.distinctUntilChanged()
+
+    // ─────────────────────────────────────────────────────────────
+    // Feature 5: Focus Points Economy
+    // ─────────────────────────────────────────────────────────────
+
+    fun observeFocusPoints(): Flow<Int> = focusPointsDao.observeBalance()
+
+    suspend fun awardFocusPoints(amount: Int, reason: String) {
+        focusPointsDao.insert(
+            FocusPointsEntity(
+                delta = amount,
+                reason = reason,
+                timestampMs = System.currentTimeMillis(),
+            )
+        )
+    }
+
+    suspend fun spendFocusPoints(amount: Int, reason: String): Boolean {
+        val balance = focusPointsDao.getBalance()
+        if (balance < amount) return false
+        focusPointsDao.insert(
+            FocusPointsEntity(
+                delta = -amount,
+                reason = reason,
+                timestampMs = System.currentTimeMillis(),
+            )
+        )
+        return true
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Feature 7: Focus Session Persistence (Pomodoro Stats)
+    // ─────────────────────────────────────────────────────────────
+
+    suspend fun recordFocusSession(
+        startTimeMs: Long,
+        endTimeMs: Long,
+        mode: String,
+        plannedDurationMin: Int,
+        wasCompleted: Boolean,
+    ) {
+        val pointsEarned = if (wasCompleted) (plannedDurationMin * 2) else (plannedDurationMin / 4)
+        val dayKey = DateUtils.toDayKey(DateUtils.millisToLocalDate(startTimeMs))
+
+        focusSessionDao.insert(
+            FocusSessionEntity(
+                startTimeMs = startTimeMs,
+                endTimeMs = endTimeMs,
+                mode = mode,
+                plannedDurationMin = plannedDurationMin,
+                wasCompleted = wasCompleted,
+                pointsEarned = pointsEarned,
+                sessionDate = dayKey,
+            )
+        )
+
+        if (pointsEarned > 0) {
+            val reason = if (wasCompleted) "Completed ${plannedDurationMin}m $mode" else "Partial ${plannedDurationMin}m $mode"
+            awardFocusPoints(pointsEarned, reason)
+        }
+    }
+
+    fun observeWeeklyFocusSessions(): Flow<List<FocusSessionEntity>> {
+        val today = DateUtils.today()
+        val weekStartKey = DateUtils.toDayKey(today.minusDays(6))
+        val todayKey = DateUtils.toDayKey(today)
+        return focusSessionDao.observeSessionsBetween(weekStartKey, todayKey)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Feature 6: App Chain Rules
+    // ─────────────────────────────────────────────────────────────
+
+    fun observeChainRules(): Flow<List<AppChainRuleEntity>> = appChainRuleDao.observeAllRules()
+
+    suspend fun addChainRule(
+        gatePackage: String,
+        gateAppName: String,
+        gateDurationMin: Int,
+        targetPackage: String,
+        targetAppName: String,
+    ): Long = appChainRuleDao.upsert(
+        AppChainRuleEntity(
+            gatePackage = gatePackage,
+            gateAppName = gateAppName,
+            gateDurationMin = gateDurationMin,
+            targetPackage = targetPackage,
+            targetAppName = targetAppName,
+            createdAt = System.currentTimeMillis(),
+        )
+    )
+
+    suspend fun deleteChainRule(id: Long) = appChainRuleDao.deleteById(id)
+
+    suspend fun toggleChainRule(rule: AppChainRuleEntity) =
+        appChainRuleDao.update(rule.copy(isEnabled = !rule.isEnabled))
+
+    suspend fun getEnrichedChainRules(): List<AppChainRule> {
+        val entities = appChainRuleDao.getEnabledRules()
+        return appChainEvaluator.enrichRulesWithProgress(entities)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Sync
+    // ─────────────────────────────────────────────────────────────
 
     suspend fun syncRecentDays(dayCount: Int = 7): Result<Unit> {
         ensureSyncMetadataExists()
@@ -286,6 +450,10 @@ class UsageTrackingRepository @Inject constructor(
         recomputeDailySummary(DateUtils.millisToLocalDate(now))
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Private helpers
+    // ─────────────────────────────────────────────────────────────
+
     private suspend fun syncDay(date: LocalDate) {
         val dayKey = DateUtils.toDayKey(date)
         val appUsage = usageStatsCollector.collectAppUsage(date).map { usage ->
@@ -310,12 +478,15 @@ class UsageTrackingRepository @Inject constructor(
         val topApps = appUsageDao.getUsageBetween(dayKey, dayKey)
         val totalFromApps = appUsageDao.getTotalUsageMs(dayKey)
         val totalFromScreen = screenSessionDao.getTotalScreenTimeMs(dayKey)
-        // Only fallback to apps if screen time is 0, but cap it at 24 hours to avoid overlapping inflation
         val maxMsInDay = 24 * 60 * 60 * 1000L
         val totalScreenMs = if (totalFromScreen > 0) totalFromScreen else totalFromApps.coerceAtMost(maxMsInDay)
         val topApp = appUsageDao.getTopApp(dayKey)
         val unlockCount = unlockEventDao.getUnlockCount(dayKey)
         val focusScore = dashboardMapper.computeFocusScore(totalScreenMs, topApps)
+
+        // Feature 3: Ghost Pickup computation on sync
+        val unlockEvents = unlockEventDao.getUnlockEventsForDate(dayKey)
+        val ghostAnalysis = ghostPickupAnalyzer.analyze(unlockEvents)
 
         dailySummaryDao.upsert(
             DailySummaryEntity(
@@ -328,6 +499,7 @@ class UsageTrackingRepository @Inject constructor(
                 topAppName = topApp?.appName,
                 focusScore = focusScore,
                 computedAt = now,
+                ghostPickups = ghostAnalysis.ghostPickups,
             ),
         )
     }
@@ -416,6 +588,35 @@ class UsageTrackingRepository @Inject constructor(
         }
     }
 
+    private fun toSessionItem(entity: FocusSessionEntity, today: LocalDate): FocusSessionItem {
+        val sessionDate = DateUtils.fromDayKey(entity.sessionDate)
+        val dateLabel = when {
+            sessionDate == today -> "Today"
+            sessionDate == today.minusDays(1) -> "Yesterday"
+            else -> sessionDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()) +
+                    " " + sessionDate.format(DateTimeFormatter.ofPattern("MMM d"))
+        }
+        val timeLabel = java.time.Instant.ofEpochMilli(entity.startTimeMs)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("h:mm a"))
+        val actualMin = ((entity.endTimeMs - entity.startTimeMs) / 60_000L).toInt()
+        return FocusSessionItem(
+            id = entity.id,
+            mode = entity.mode,
+            plannedDurationMin = entity.plannedDurationMin,
+            actualDurationMin = actualMin,
+            wasCompleted = entity.wasCompleted,
+            pointsEarned = entity.pointsEarned,
+            dateLabel = dateLabel,
+            timeLabel = timeLabel,
+        )
+    }
+
+    private fun formatDateLabel(date: LocalDate): String {
+        val formatter = DateTimeFormatter.ofPattern("EEEE, MMM d")
+        return date.format(formatter)
+    }
+
     private suspend fun ensureSyncMetadataExists() {
         if (syncMetadataDao.getMetadata() == null) {
             syncMetadataDao.upsert(
@@ -463,3 +664,4 @@ private data class DashboardSnapshot(
     val weekSummaries: List<DailySummaryEntity>,
     val unlockCount: Int,
 )
+

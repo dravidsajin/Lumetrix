@@ -31,6 +31,16 @@ data class InsightsUiState(
     val behavioralInsights: List<BehavioralInsightItem> = emptyList(),
     val recommendations: List<RecommendationItem> = emptyList(),
     val lastSyncedLabel: String? = null,
+
+    // Feature 4: Distraction Index
+    val distractionIndex: Int = 0,
+    val distractionIndexLabel: String = "—",
+
+    // Feature 7: Pomodoro / Focus Session Stats
+    val weeklyFocusSessions: Int = 0,
+    val focusSuccessRate: Int = 0,
+    val avgFocusSessionMin: Int = 0,
+    val recentFocusSessions: List<FocusSessionItem> = emptyList(),
 )
 
 data class AchievementItem(

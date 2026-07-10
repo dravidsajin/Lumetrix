@@ -129,22 +129,17 @@ fun DashboardScreen(
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = LumetrixTokens.CardSpacing),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text(
-                            text = uiState.greeting,
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = TextPrimary,
-                        )
-                        SyncStatusText(isSyncing = uiState.isSyncing)
-                    }
-                }
+                // Feature 1: Historical Day Browser
+                DateSelectorHeader(
+                    selectedDate = uiState.selectedDate,
+                    isViewingPastDay = uiState.isViewingPastDay,
+                    onPreviousDay = { viewModel.goToPreviousDay() },
+                    onNextDay = { viewModel.goToNextDay() },
+                    onTodayClick = { viewModel.goToToday() },
+                    modifier = Modifier.padding(bottom = LumetrixTokens.CardSpacing),
+                )
+
+                SyncStatusText(isSyncing = uiState.isSyncing)
 
                 Column(
                     modifier = Modifier
@@ -194,6 +189,15 @@ fun DashboardScreen(
                                 color = TextSecondary,
                             )
                         }
+                    }
+
+                    // Feature 3: Ghost Pickup / Habit Score card
+                    if (uiState.hasUsageAccess) {
+                        HabitScoreCard(
+                            habitScore = uiState.habitScore,
+                            ghostPickups = uiState.ghostPickups,
+                            unlockCount = uiState.unlockCount,
+                        )
                     }
 
                     // 2.5 Weekly Screen Time Graph
@@ -379,6 +383,71 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HabitScoreCard(
+    habitScore: Int,
+    ghostPickups: Int,
+    unlockCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    val scoreColor = when {
+        habitScore >= 80 -> Success
+        habitScore >= 60 -> Warning
+        else -> Danger
+    }
+    val scoreLabel = when {
+        habitScore >= 80 -> "Excellent habit control"
+        habitScore >= 60 -> "Moderate phone habits"
+        else -> "Frequent habitual checking"
+    }
+
+    GlassCard(modifier = modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "Habit Score",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextSecondary,
+                    )
+                    Text(
+                        text = "$habitScore / 100",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = scoreColor,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Ghost Pickups",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextSecondary,
+                    )
+                    Text(
+                        text = "$ghostPickups / $unlockCount",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = if (ghostPickups > unlockCount / 2) Danger else TextPrimary,
+                    )
+                }
+            }
+            Text(
+                text = scoreLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+            )
+            Text(
+                text = "Ghost pickups = unlocks with no app session within 2 minutes. Reduce habitual checking to improve your score.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary.copy(alpha = 0.7f),
+            )
         }
     }
 }

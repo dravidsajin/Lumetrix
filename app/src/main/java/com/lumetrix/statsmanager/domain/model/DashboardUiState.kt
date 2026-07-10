@@ -3,6 +3,7 @@ package com.lumetrix.statsmanager.domain.model
 import androidx.compose.ui.graphics.Color
 import com.lumetrix.statsmanager.ui.theme.Success
 import com.lumetrix.statsmanager.ui.theme.Warning
+import java.time.LocalDate
 
 enum class AppCategory(val label: String, val storageKey: String) {
     Productive("Productive", "productive"),
@@ -61,4 +62,12 @@ data class DashboardUiState(
     // Quick Stats
     val longestSessionLabel: String = "0m",
     val focusScoreDelta: Int? = null,
+
+    // Feature 1: Historical Day Browser
+    val selectedDate: LocalDate = LocalDate.now(),
+    val isViewingPastDay: Boolean = false,
+
+    // Feature 3: Ghost Pickup Detector
+    val ghostPickups: Int = 0,
+    val habitScore: Int = 100,
 )

@@ -85,4 +85,15 @@ interface AppUsageDao {
         """,
     )
     fun observeAppUsageHistory(packageName: String, startDayKey: Int, endDayKey: Int): Flow<List<AppUsageEntity>>
+
+    /** Returns total usage ms for a specific app on a specific day. Used by AppChainEvaluator. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(usage_duration_ms), 0)
+        FROM app_usage_records
+        WHERE package_name = :packageName AND usage_date = :dayKey
+        """,
+    )
+    suspend fun getUsageForDate(packageName: String, dayKey: Int): Long
 }
+
