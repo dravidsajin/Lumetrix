@@ -24,6 +24,7 @@ class UsageInsightsAnalyzer @Inject constructor(
         val distractingPercent: Int,
         val behavioralInsights: List<BehavioralInsightItem>,
         val recommendations: List<RecommendationItem>,
+        val periodUsage: com.lumetrix.statsmanager.domain.model.PeriodUsage,
     )
 
     fun analyze(
@@ -33,6 +34,7 @@ class UsageInsightsAnalyzer @Inject constructor(
     ): InsightsAnalysis {
         val (productive, neutral, distracting) = dashboardMapper.computeCategoryBreakdown(weekApps)
         val patterns = usagePatternAnalyzer.analyze(today)
+
 
         val insights = buildList {
             if (patterns.lateNightMsThisWeek > 0) {
@@ -126,6 +128,7 @@ class UsageInsightsAnalyzer @Inject constructor(
                 )
             },
             recommendations = recommendations,
+            periodUsage = patterns.periodUsage,
         )
     }
 

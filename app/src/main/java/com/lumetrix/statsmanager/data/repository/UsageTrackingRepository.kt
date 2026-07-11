@@ -35,6 +35,10 @@ import com.lumetrix.statsmanager.domain.model.DashboardUiState
 import com.lumetrix.statsmanager.domain.model.FocusSessionItem
 import com.lumetrix.statsmanager.domain.model.InsightsUiState
 import com.lumetrix.statsmanager.domain.model.ProfileUiState
+import com.lumetrix.statsmanager.domain.model.FocusHeatmapPoint
+import com.lumetrix.statsmanager.domain.model.DoomscrollAppItem
+import com.lumetrix.statsmanager.domain.model.PeriodUsage
+import com.lumetrix.statsmanager.domain.model.SimpleAppInfo
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -48,6 +52,7 @@ import javax.inject.Singleton
 
 @Singleton
 class UsageTrackingRepository @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val usageAccessChecker: UsageAccessChecker,
     private val usageStatsCollector: UsageStatsCollector,
     private val appCategoryRepository: AppCategoryRepository,
@@ -162,34 +167,101 @@ class UsageTrackingRepository @Inject constructor(
         val today = DateUtils.today()
         val todayKey = DateUtils.toDayKey(today)
         val weekStartKey = DateUtils.toDayKey(today.minusDays(6))
+        val fourteenDaysStartKey = DateUtils.toDayKey(today.minusDays(13))
+        val twentyEightDaysStartKey = DateUtils.toDayKey(today.minusDays(27))
 
-        return combine(
-            appUsageDao.observeAllUsageBetween(weekStartKey, todayKey),
-            dailySummaryDao.observeSummariesBetween(weekStartKey, todayKey),
+        val baseFlow = combine(
+            appUsageDao.observeAllUsageBetween(fourteenDaysStartKey, todayKey),
+            dailySummaryDao.observeSummariesBetween(twentyEightDaysStartKey, todayKey),
             syncMetadataDao.observeMetadata(),
             appCategoryRepository.observeCategoryChanges(),
-            focusSessionDao.observeSessionsBetween(weekStartKey, todayKey),
-        ) { weekApps, weekSummaries, syncMetadata, _, focusSessions ->
+            focusSessionDao.observeSessionsBetween(weekStartKey, todayKey)
+        ) { fourteenDaysApps, twentyEightDaysSummaries, syncMetadata, _, focusSessions ->
+            InsightsSnapshot(
+                fourteenDaysApps = fourteenDaysApps,
+                twentyEightDaysSummaries = twentyEightDaysSummaries,
+                syncMetadata = syncMetadata,
+                focusSessions = focusSessions
+            )
+        }
+
+        return combine(baseFlow, focusPointsDao.observeBalance()) { snapshot, pointsBalance ->
             val hasAccess = usageAccessChecker.hasUsageAccess()
             if (!hasAccess) {
                 InsightsUiState(
                     hasUsageAccess = false,
                     isLoading = false,
-                    lastSyncedLabel = SyncLabelFormatter.formatLastSynced(syncMetadata?.lastSuccessAt),
+                    lastSyncedLabel = SyncLabelFormatter.formatLastSynced(snapshot.syncMetadata?.lastSuccessAt),
                 )
             } else {
+                val weekApps = snapshot.fourteenDaysApps.filter { it.usageDate >= weekStartKey }
+                val weekSummaries = snapshot.twentyEightDaysSummaries.filter { it.summaryDate >= weekStartKey }
+                val lastWeekSummaries = snapshot.twentyEightDaysSummaries.filter { 
+                    it.summaryDate >= fourteenDaysStartKey && it.summaryDate < weekStartKey 
+                }
+
                 val analysis = usageInsightsAnalyzer.analyze(weekApps, weekSummaries, today)
                 val distractionAnalysis = distractionIndexAnalyzer.analyze(weekApps, weekSummaries)
 
-                val completedSessions = focusSessions.filter { it.wasCompleted }
+                val completedSessions = snapshot.focusSessions.filter { it.wasCompleted }
                 val avgDurationMs = if (completedSessions.isNotEmpty()) {
                     completedSessions.sumOf { it.endTimeMs - it.startTimeMs } / completedSessions.size
                 } else 0L
-                val successRate = if (focusSessions.isNotEmpty()) {
-                    (completedSessions.size * 100 / focusSessions.size)
+                val successRate = if (snapshot.focusSessions.isNotEmpty()) {
+                    (completedSessions.size * 100 / snapshot.focusSessions.size)
                 } else 0
 
-                val sessionItems = focusSessions.take(5).map { toSessionItem(it, today) }
+                val sessionItems = snapshot.focusSessions.take(5).map { toSessionItem(it, today) }
+
+                // --- Revamp Extras Computations ---
+                // 1. Screen time change comparison
+                val thisWeekMs = weekSummaries.sumOf { it.totalScreenTimeMs }
+                val lastWeekMs = lastWeekSummaries.sumOf { it.totalScreenTimeMs }
+                val screenTimeChange = calculatePercentChange(lastWeekMs, thisWeekMs)
+
+                // 2. Average Habit/Focus Score change comparison
+                val thisWeekAvgScore = if (weekSummaries.isNotEmpty()) {
+                    weekSummaries.map { it.focusScore }.average().toInt()
+                } else 0
+                val lastWeekAvgScore = if (lastWeekSummaries.isNotEmpty()) {
+                    lastWeekSummaries.map { it.focusScore }.average().toInt()
+                } else 0
+                val scoreChangePercent = thisWeekAvgScore - lastWeekAvgScore
+
+                // 3. Focus Heatmap (28 days grid)
+                val summaryByDay = snapshot.twentyEightDaysSummaries.associateBy { it.summaryDate }
+                val heatmapPoints = (0 until 28).map { dayOffset ->
+                    val date = today.minusDays(27 - dayOffset.toLong())
+                    val dayKey = DateUtils.toDayKey(date)
+                    val score = summaryByDay[dayKey]?.focusScore ?: 0
+                    FocusHeatmapPoint(
+                        dayKey = dayKey,
+                        dayLabel = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                        dateLabel = date.format(DateTimeFormatter.ofPattern("MMM d")),
+                        focusScore = score
+                    )
+                }
+
+                // 4. Doomscroll apps (average session length >= 5 min, categorized as distracting)
+                val appGroups = weekApps
+                    .filter { AppCategory.fromStorageKey(it.category) == AppCategory.Distracting }
+                    .groupBy { it.packageName }
+
+                val doomscrollList = appGroups.mapNotNull { (packageName, records) ->
+                    val totalDuration = records.sumOf { it.usageDurationMs }
+                    val totalSessions = records.sumOf { it.sessionCount }
+                    val appName = records.firstOrNull()?.appName ?: "App"
+                    if (totalSessions > 0) {
+                        val avgSessionMs = totalDuration / totalSessions
+                        val avgMin = (avgSessionMs / 60_000L).toInt()
+                        DoomscrollAppItem(
+                            packageName = packageName,
+                            appName = appName,
+                            avgSessionMin = avgMin,
+                            totalSessions = totalSessions
+                        )
+                    } else null
+                }.sortedByDescending { it.avgSessionMin }
 
                 InsightsUiState(
                     hasUsageAccess = true,
@@ -200,17 +272,31 @@ class UsageTrackingRepository @Inject constructor(
                     distractingPercent = analysis.distractingPercent,
                     behavioralInsights = analysis.behavioralInsights,
                     recommendations = analysis.recommendations,
-                    lastSyncedLabel = SyncLabelFormatter.formatLastSynced(syncMetadata?.lastSuccessAt),
+                    lastSyncedLabel = SyncLabelFormatter.formatLastSynced(snapshot.syncMetadata?.lastSuccessAt),
                     distractionIndex = distractionAnalysis.index,
                     distractionIndexLabel = distractionAnalysis.label,
-                    weeklyFocusSessions = focusSessions.size,
+                    weeklyFocusSessions = snapshot.focusSessions.size,
                     focusSuccessRate = successRate,
                     avgFocusSessionMin = (avgDurationMs / 60_000L).toInt(),
                     recentFocusSessions = sessionItems,
+
+                    // Revamp extras
+                    screenTimeChangePercent = screenTimeChange,
+                    habitScoreChangePercent = scoreChangePercent,
+                    focusPointsEarned = pointsBalance,
+                    periodUsage = analysis.periodUsage,
+                    focusHeatmap = heatmapPoints,
+                    doomscrollApps = doomscrollList,
                 )
             }
         }.distinctUntilChanged()
     }
+
+    private fun calculatePercentChange(oldValue: Long, newValue: Long): Int {
+        if (oldValue <= 0L) return if (newValue > 0L) 100 else 0
+        return (((newValue - oldValue).toDouble() / oldValue.toDouble()) * 100).toInt()
+    }
+
 
     fun observeAppDetailsState(packageName: String): Flow<AppDetailsUiState> {
         val today = DateUtils.today()
@@ -649,6 +735,20 @@ class UsageTrackingRepository @Inject constructor(
             ),
         )
     }
+
+    fun getInstalledApps(): List<SimpleAppInfo> {
+        val pm = context.packageManager
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN, null).apply {
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfos = pm.queryIntentActivities(intent, 0)
+        return resolveInfos.map {
+            SimpleAppInfo(
+                packageName = it.activityInfo.packageName,
+                appName = it.loadLabel(pm).toString()
+            )
+        }.distinctBy { it.packageName }.sortedBy { it.appName }
+    }
 }
 
 private fun AppCategory.toColor() = when (this) {
@@ -664,4 +764,12 @@ private data class DashboardSnapshot(
     val weekSummaries: List<DailySummaryEntity>,
     val unlockCount: Int,
 )
+
+private data class InsightsSnapshot(
+    val fourteenDaysApps: List<AppUsageEntity>,
+    val twentyEightDaysSummaries: List<DailySummaryEntity>,
+    val syncMetadata: SyncMetadataEntity?,
+    val focusSessions: List<FocusSessionEntity>,
+)
+
 

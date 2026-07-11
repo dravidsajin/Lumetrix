@@ -12,6 +12,7 @@ import com.lumetrix.statsmanager.domain.model.AppChainRule
 import com.lumetrix.statsmanager.domain.model.FocusSessionItem
 import com.lumetrix.statsmanager.domain.model.FocusState
 import com.lumetrix.statsmanager.domain.model.FocusUiState
+import com.lumetrix.statsmanager.domain.model.SimpleAppInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -50,7 +51,6 @@ class FocusViewModel @Inject constructor(
         } catch (e: Exception) {
             emptyList()
         }
-        val today = DateUtils.today()
         val completedThisWeek = weekSessions.count { it.wasCompleted }
         val successRate = if (weekSessions.isNotEmpty()) {
             completedThisWeek * 100 / weekSessions.size
@@ -67,6 +67,13 @@ class FocusViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = FocusUiState()
     )
+
+    init {
+        viewModelScope.launch {
+            val apps = repository.getInstalledApps()
+            _uiState.value = _uiState.value.copy(availableApps = apps)
+        }
+    }
 
     fun selectDuration(minutes: Int) {
         if (_uiState.value.state != FocusState.Setup) return
@@ -99,14 +106,12 @@ class FocusViewModel @Inject constructor(
                     remainingTimeMillis = _uiState.value.remainingTimeMillis - 1000L
                 )
             }
-            // Timer completed naturally
             onSessionFinished(wasCompleted = true)
         }
     }
 
     fun endSession() {
         timerJob?.cancel()
-        // If session was active, record as abandoned
         if (_uiState.value.state == FocusState.Active) {
             onSessionFinished(wasCompleted = false)
         } else {
@@ -152,6 +157,10 @@ class FocusViewModel @Inject constructor(
     // Feature 6: App Chain Rules
     // ─────────────────────────────────────────────────────────────
 
+    fun setAddRuleDialogVisible(visible: Boolean) {
+        _uiState.value = _uiState.value.copy(showAddRuleDialog = visible)
+    }
+
     fun addChainRule(
         gatePackage: String,
         gateAppName: String,
@@ -167,6 +176,7 @@ class FocusViewModel @Inject constructor(
                 targetPackage = targetPackage,
                 targetAppName = targetAppName,
             )
+            setAddRuleDialogVisible(false)
         }
     }
 

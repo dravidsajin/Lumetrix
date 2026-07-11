@@ -19,6 +19,8 @@ data class FocusUiState(
 
     // Feature 6: App Chain Rules
     val chainRules: List<AppChainRule> = emptyList(),
+    val availableApps: List<SimpleAppInfo> = emptyList(),
+    val showAddRuleDialog: Boolean = false,
 
     // Feature 7: Pomodoro Stats
     val recentSessions: List<FocusSessionItem> = emptyList(),

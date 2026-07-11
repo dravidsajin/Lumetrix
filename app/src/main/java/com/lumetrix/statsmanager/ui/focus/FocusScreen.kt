@@ -86,6 +86,7 @@ fun FocusScreen(
             onSelectDuration = { viewModel.selectDuration(it) },
             onStartSession = { viewModel.startSession() },
             onDeleteRule = { viewModel.deleteChainRule(it) },
+            onAddRule = { viewModel.setAddRuleDialogVisible(true) },
         )
         FocusState.Active -> ImmersiveFocusSession(
             mode = uiState.selectedMode,
@@ -99,6 +100,22 @@ fun FocusScreen(
             onDismiss = { viewModel.dismissCompleted() }
         )
     }
+
+    if (uiState.showAddRuleDialog) {
+        AppChainRuleDialog(
+            availableApps = uiState.availableApps,
+            onDismiss = { viewModel.setAddRuleDialogVisible(false) },
+            onConfirm = { gateApp, durationMin, targetApp ->
+                viewModel.addChainRule(
+                    gatePackage = gateApp.packageName,
+                    gateAppName = gateApp.appName,
+                    gateDurationMin = durationMin,
+                    targetPackage = targetApp.packageName,
+                    targetAppName = targetApp.appName
+                )
+            }
+        )
+    }
 }
 
 @Composable
@@ -108,6 +125,7 @@ private fun FocusSetupScreen(
     onSelectDuration: (Int) -> Unit,
     onStartSession: () -> Unit,
     onDeleteRule: (Long) -> Unit,
+    onAddRule: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -219,7 +237,7 @@ private fun FocusSetupScreen(
         // Feature 6: App Chain Rules
         AppChainRulesSection(
             rules = uiState.chainRules,
-            onAddRule = { /* show dialog - handled by state */ },
+            onAddRule = onAddRule,
             onDeleteRule = onDeleteRule,
         )
 
