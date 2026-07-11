@@ -5,12 +5,12 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Lightbulb
-import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Settings
 import com.lumetrix.statsmanager.ui.components.BottomNavItem
 
 enum class LumetrixDestination(
@@ -18,10 +18,10 @@ enum class LumetrixDestination(
     val label: String,
 ) {
     Pulse("pulse", "Pulse"),
-    Apps("apps", "Apps"),
-    Focus("focus", "Focus"),
     Insights("insights", "Insights"),
-    Profile("profile", "Profile")
+    Focus("focus", "Focus"),
+    Apps("apps", "Apps"),
+    Settings("settings", "Settings")
 }
 
 fun lumetrixBottomNavItems(): List<BottomNavItem> = listOf(
@@ -31,9 +31,9 @@ fun lumetrixBottomNavItems(): List<BottomNavItem> = listOf(
         selectedIcon = Icons.Rounded.Dashboard,
     ),
     BottomNavItem(
-        label = LumetrixDestination.Apps.label,
-        icon = Icons.Outlined.Apps,
-        selectedIcon = Icons.Rounded.Apps,
+        label = LumetrixDestination.Insights.label,
+        icon = Icons.Outlined.Lightbulb,
+        selectedIcon = Icons.Rounded.Lightbulb,
     ),
     BottomNavItem(
         label = LumetrixDestination.Focus.label,
@@ -41,14 +41,14 @@ fun lumetrixBottomNavItems(): List<BottomNavItem> = listOf(
         selectedIcon = Icons.Rounded.CenterFocusStrong,
     ),
     BottomNavItem(
-        label = LumetrixDestination.Insights.label,
-        icon = Icons.Outlined.Lightbulb,
-        selectedIcon = Icons.Rounded.Lightbulb,
+        label = LumetrixDestination.Apps.label,
+        icon = Icons.Outlined.Apps,
+        selectedIcon = Icons.Rounded.Apps,
     ),
     BottomNavItem(
-        label = LumetrixDestination.Profile.label,
-        icon = Icons.Outlined.Person,
-        selectedIcon = Icons.Rounded.Person,
+        label = LumetrixDestination.Settings.label,
+        icon = Icons.Outlined.Settings,
+        selectedIcon = Icons.Rounded.Settings,
     ),
 )
 

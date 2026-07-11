@@ -92,7 +92,7 @@ class DashboardViewModel @Inject constructor(
         val current = selectedDate.value
         // Don't go back more than 30 days
         if (current.isAfter(DateUtils.today().minusDays(30))) {
-            selectedDate.value = current.minusDays(1)
+            selectDate(current.minusDays(1))
         }
     }
 
@@ -100,11 +100,11 @@ class DashboardViewModel @Inject constructor(
         val current = selectedDate.value
         val today = DateUtils.today()
         if (current.isBefore(today)) {
-            selectedDate.value = current.plusDays(1)
+            selectDate(current.plusDays(1))
         }
     }
 
     fun goToToday() {
-        selectedDate.value = DateUtils.today()
+        selectDate(DateUtils.today())
     }
 }

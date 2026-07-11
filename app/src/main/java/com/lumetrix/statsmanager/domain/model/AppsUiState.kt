@@ -6,5 +6,7 @@ data class AppsUiState(
     val allApps: List<AppUsageItem> = emptyList(),
     val displayApps: List<AppUsageItem> = emptyList(),
     val selectedCategory: AppCategory? = null,
-    val totalTimeLabel: String = "0m"
+    val totalTimeLabel: String = "0m",
+    val unlockCount: Int = 0,
+    val notificationCount: Int = 0
 )

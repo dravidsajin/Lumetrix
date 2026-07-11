@@ -32,8 +32,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,22 +75,38 @@ fun AppDetailsScreen(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    title = { Text("App Details", color = TextPrimary) },
-                    navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(
-                                imageVector = Icons.Rounded.ArrowBack,
-                                contentDescription = "Back",
-                                tint = TextPrimary
+                Column {
+                    TopAppBar(
+                        title = { Text("App Details", color = TextPrimary, fontWeight = FontWeight.Bold) },
+                        navigationIcon = {
+                            IconButton(onClick = onNavigateBack) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = TextPrimary
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                        ),
+                        modifier = Modifier.statusBarsPadding()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        AccentPrimary.copy(alpha = 0.45f),
+                                        com.lumetrix.statsmanager.ui.theme.AccentSecondary.copy(alpha = 0.25f),
+                                        Color.Transparent
+                                    )
+                                )
                             )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                    ),
-                    modifier = Modifier.statusBarsPadding()
-                )
+                    )
+                }
             }
         ) { paddingValues ->
             if (uiState.isLoading) {

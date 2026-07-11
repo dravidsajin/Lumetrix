@@ -33,14 +33,15 @@ class DashboardMapper @Inject constructor() {
         return (100 - (ratio * 100f)).toInt().coerceIn(0, 100)
     }
 
-    fun buildInsight(focusScore: Int, totalMs: Long): Pair<String, String> {
+    fun buildInsight(focusScore: Int, totalMs: Long, isViewingPastDay: Boolean = false): Pair<String, String> {
         if (totalMs <= 0L) {
             return "No usage recorded yet" to "Use your device normally and sync again in a few minutes."
         }
+        val dayTerm = if (isViewingPastDay) "on this day" else "today"
         return when {
-            focusScore >= 80 -> "Strong focus day" to "Your distracting app usage is low today. Keep it up."
-            focusScore >= 60 -> "Balanced usage" to "You're doing well — a short focus session could boost productivity."
-            else -> "High distraction detected" to "Consider a focus session to reduce time on distracting apps."
+            focusScore >= 80 -> "Strong focus day" to "Your distracting app usage was low $dayTerm. Keep it up."
+            focusScore >= 60 -> "Balanced usage" to "You did well — you maintained a healthy focus state $dayTerm."
+            else -> "High distraction detected" to "You spent a lot of time on distracting apps $dayTerm."
         }
     }
 

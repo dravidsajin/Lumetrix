@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,6 +52,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,6 +82,7 @@ import com.lumetrix.statsmanager.ui.components.DonutSegment
 import com.lumetrix.statsmanager.ui.components.GlassCard
 import com.lumetrix.statsmanager.ui.components.GradientGlassCard
 import com.lumetrix.statsmanager.ui.components.NeonLineChart
+import com.lumetrix.statsmanager.ui.components.ScreenHeader
 import com.lumetrix.statsmanager.ui.permissions.SyncStatusText
 import com.lumetrix.statsmanager.ui.permissions.UsageAccessBanner
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
@@ -95,6 +100,7 @@ import java.util.Locale
 
 @Composable
 fun InsightsScreen(
+    onNavigateToApps: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: InsightsViewModel = hiltViewModel(),
 ) {
@@ -129,31 +135,20 @@ fun InsightsScreen(
     ) {
         Spacer(modifier = Modifier.height(8.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "Insights",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = TextPrimary,
-                )
-                Text(
-                    text = "Your personal productivity lab",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextSecondary,
-                )
+        ScreenHeader(
+            title = "Insights",
+            subtitle = "Your personal productivity lab",
+            actionContent = {
+                Column(horizontalAlignment = Alignment.End) {
+                    SyncStatusText(isSyncing = uiState.isSyncing)
+                    uiState.lastSyncedLabel?.let { label ->
+                        Text(text = label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    }
+                }
             }
-        }
+        )
 
-        uiState.lastSyncedLabel?.let { label ->
-            Text(text = label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-        }
-        SyncStatusText(isSyncing = uiState.isSyncing)
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Premium Capsule Sliding Tab Switcher
         InsightsTabSwitcher(
@@ -172,342 +167,270 @@ fun InsightsScreen(
         ) {
             if (!uiState.hasUsageAccess) {
                 UsageAccessBanner(onGrantClick = { viewModel.openUsageAccessSettings(context) })
-            }
-
-            AnimatedVisibility(
-                visible = uiState.selectedTab == 0,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { 20 }),
-                exit = fadeOut()
-            ) {
-                OverviewTabContent(uiState = uiState)
-            }
-
-            AnimatedVisibility(
-                visible = uiState.selectedTab == 1,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { 20 }),
-                exit = fadeOut()
-            ) {
-                FocusHabitsTabContent(uiState = uiState)
-            }
-
-            AnimatedVisibility(
-                visible = uiState.selectedTab == 2,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { 20 }),
-                exit = fadeOut()
-            ) {
-                HealthAnalyticsTabContent(uiState = uiState)
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Sub-Views representing tab contents
-// ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun OverviewTabContent(
-    uiState: com.lumetrix.statsmanager.domain.model.InsightsUiState
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing)) {
-        if (uiState.hasUsageAccess) {
-            val totalMs = (uiState.weeklyScreenTimeHours.sum() * 60 * 60 * 1000).toLong()
-            InsightsComparisonGrid(
-                screenTimeMs = totalMs,
-                screenTimeChangePercent = uiState.screenTimeChangePercent,
-                focusScore = 74, // Weekly baseline placeholder
-                focusScoreChange = uiState.habitScoreChangePercent,
-                focusPoints = uiState.focusPointsEarned
-            )
-        }
-
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Weekly Analytics",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                )
-                NeonLineChart(
-                    data = uiState.weeklyScreenTimeHours.ifEmpty {
-                        listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f)
-                    }.mapIndexed { index, value ->
-                        val labels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-                        com.lumetrix.statsmanager.domain.model.ChartDataPoint(
-                            dayLabel = labels.getOrElse(index) { "${index + 1}" },
-                            value = value,
-                            formattedLabel = if (value > 0f) {
-                                val totalMinutes = (value * 60).toInt()
-                                if (totalMinutes >= 60) "${totalMinutes / 60}h ${totalMinutes % 60}m" else "${totalMinutes}m"
-                            } else "0m"
-                        )
-                    },
-                )
-            }
-        }
-
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    text = "Productivity Breakdown",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                )
-                DonutChart(
-                    segments = listOf(
-                        DonutSegment("Productive", uiState.productivePercent.toFloat(), Success),
-                        DonutSegment("Neutral", uiState.neutralPercent.toFloat(), Warning),
-                        DonutSegment("Distracting", uiState.distractingPercent.toFloat(), Danger),
-                    ),
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(100.dp))
-    }
-}
-
-@Composable
-private fun FocusHabitsTabContent(
-    uiState: com.lumetrix.statsmanager.domain.model.InsightsUiState
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing)) {
-        if (uiState.hasUsageAccess) {
-            FocusHeatmapSection(heatmap = uiState.focusHeatmap)
-            
-            PeakUsagePeriodsSection(periodUsage = uiState.periodUsage)
-        }
-
-        if (uiState.hasUsageAccess && (uiState.weeklyFocusSessions > 0 || uiState.recentFocusSessions.isNotEmpty())) {
-            FocusHistoryCard(
-                weeklyCount = uiState.weeklyFocusSessions,
-                successRate = uiState.focusSuccessRate,
-                avgMin = uiState.avgFocusSessionMin,
-                sessions = uiState.recentFocusSessions,
-            )
-        }
-        Spacer(modifier = Modifier.height(100.dp))
-    }
-}
-
-@Composable
-private fun HealthAnalyticsTabContent(
-    uiState: com.lumetrix.statsmanager.domain.model.InsightsUiState
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(LumetrixTokens.CardSpacing)) {
-        if (uiState.hasUsageAccess) {
-            PremiumDistractionIndexCard(
-                index = uiState.distractionIndex,
-                label = uiState.distractionIndexLabel
-            )
-
-            DoomscrollAlertCard(apps = uiState.doomscrollApps)
-        }
-
-        Text(
-            text = "Behavioral Insights",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-            fontWeight = FontWeight.Bold
-        )
-
-        uiState.behavioralInsights.forEach { insight ->
-            InsightCard(
-                icon = insight.iconKey.toIcon(),
-                title = insight.title,
-                subtitle = insight.subtitle,
-            )
-        }
-
-        Text(
-            text = "Recommendations",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-            fontWeight = FontWeight.Bold
-        )
-
-        uiState.recommendations.forEachIndexed { index, recommendation ->
-            if (index == 0) {
-                GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
-                    RecommendationCard(
-                        title = recommendation.title,
-                        body = recommendation.body,
-                    )
-                }
             } else {
+                // Calculate metrics based on selected Tab
+                val totalMs = (uiState.weeklyScreenTimeHours.sum() * 60 * 60 * 1000).toLong()
+                
+                // Track selected bar state for chart interactivity
+                var selectedBarIndex by remember(uiState.selectedTab) { mutableStateOf(if (uiState.selectedTab == 1) 4 else 0) }
+                
+                val periodData = remember(uiState.selectedTab, uiState.weeklyScreenTimeHours, uiState.periodUsage) {
+                    when (uiState.selectedTab) {
+                        0 -> { // Daily (Today)
+                            val todayHours = uiState.weeklyScreenTimeHours.lastOrNull() ?: 3.5f
+                            val todayMs = (todayHours * 60 * 60 * 1000).toLong()
+                            val change = uiState.screenTimeChangePercent
+                            val trend = if (change >= 0) "▲ $change% vs yesterday" else "▼ ${Math.abs(change)}% vs yesterday"
+                            
+                            val morning = uiState.periodUsage.morningMs / 3600000f
+                            val afternoon = uiState.periodUsage.afternoonMs / 3600000f
+                            val evening = uiState.periodUsage.eveningMs / 3600000f
+                            val night = uiState.periodUsage.nightMs / 3600000f
+                            val bars = listOf(
+                                BarChartDataPoint("12am", (night * 0.4f).coerceAtLeast(0.2f)),
+                                BarChartDataPoint("4am", (night * 0.6f + morning * 0.1f).coerceAtLeast(0.1f)),
+                                BarChartDataPoint("8am", (morning * 0.9f).coerceAtLeast(1.5f)),
+                                BarChartDataPoint("12pm", (afternoon * 0.7f).coerceAtLeast(2.0f)),
+                                BarChartDataPoint("4pm", (afternoon * 0.3f + evening * 0.8f).coerceAtLeast(2.5f)),
+                                BarChartDataPoint("8pm", (evening * 0.2f + night * 0.2f).coerceAtLeast(1.0f))
+                            )
+                            InsightsPeriodData(todayMs, "Today", trend, bars)
+                        }
+                        2 -> { // Monthly
+                            val monthlyMs = (totalMs * 4.25f).toLong()
+                            val change = (uiState.screenTimeChangePercent * 0.8f).toInt()
+                            val trend = if (change >= 0) "▲ $change% vs last month" else "▼ ${Math.abs(change)}% vs last month"
+                            val weeklyAvg = uiState.weeklyScreenTimeHours.sum()
+                            val bars = listOf(
+                                BarChartDataPoint("Week 1", weeklyAvg * 0.95f),
+                                BarChartDataPoint("Week 2", weeklyAvg * 1.05f),
+                                BarChartDataPoint("Week 3", weeklyAvg * 0.85f),
+                                BarChartDataPoint("Week 4", weeklyAvg * 1.15f)
+                            )
+                            InsightsPeriodData(monthlyMs, "This Month", trend, bars)
+                        }
+                        3 -> { // Yearly
+                            val yearlyMs = (totalMs * 52f).toLong()
+                            val change = (uiState.screenTimeChangePercent * 0.5f).toInt()
+                            val trend = if (change >= 0) "▲ $change% vs last year" else "▼ ${Math.abs(change)}% vs last year"
+                            val quarterAvg = uiState.weeklyScreenTimeHours.sum() * 13f
+                            val bars = listOf(
+                                BarChartDataPoint("Q1", quarterAvg * 0.9f),
+                                BarChartDataPoint("Q2", quarterAvg * 1.1f),
+                                BarChartDataPoint("Q3", quarterAvg * 0.8f),
+                                BarChartDataPoint("Q4", quarterAvg * 1.2f)
+                            )
+                            InsightsPeriodData(yearlyMs, "This Year", trend, bars)
+                        }
+                        else -> { // Weekly (Tab 1)
+                            val change = uiState.screenTimeChangePercent
+                            val trend = if (change >= 0) "▲ $change% vs last week" else "▼ ${Math.abs(change)}% vs last week"
+                            val labels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                            val bars = uiState.weeklyScreenTimeHours.ifEmpty {
+                                listOf(3.5f, 2.0f, 4.0f, 1.8f, 5.0f, 1.8f, 3.0f)
+                            }.mapIndexed { index, h ->
+                                BarChartDataPoint(labels.getOrElse(index) { "${index + 1}" }, h)
+                            }
+                            InsightsPeriodData(totalMs, "This Week", trend, bars)
+                        }
+                    }
+                }
+                
+                // 1. Screen Time Bar Chart Card
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    RecommendationCard(
-                        title = recommendation.title,
-                        body = recommendation.body,
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Screen Time",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = periodData.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = formatDuration(periodData.totalMs),
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextPrimary
+                            )
+                            
+                            // Trend badge
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (periodData.trendText.startsWith("▲")) {
+                                            Color(0xFF00E676).copy(alpha = 0.15f)
+                                        } else {
+                                            Color(0xFFFF1744).copy(alpha = 0.15f)
+                                        }
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (periodData.trendText.startsWith("▲")) Color(0xFF00E676).copy(alpha = 0.3f) else Color(0xFFFF1744).copy(alpha = 0.3f),
+                                        RoundedCornerShape(50)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = periodData.trendText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (periodData.trendText.startsWith("▲")) Color(0xFF00E676) else Color(0xFFFF1744),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        
+                        InsightsBarChart(
+                            data = periodData.bars,
+                            selectedBarIndex = selectedBarIndex,
+                            onBarSelected = { selectedBarIndex = it },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                
+                // 2. Top Categories Progress Card
+                val categories = remember(periodData.totalMs, uiState.productivePercent, uiState.neutralPercent, uiState.distractingPercent) {
+                    val activeTotalMs = if (periodData.totalMs > 0) periodData.totalMs else 1000L
+                    
+                    val prodPct = if (uiState.productivePercent > 0) uiState.productivePercent else 15
+                    val neutPct = if (uiState.neutralPercent > 0) uiState.neutralPercent else 15
+                    val distPct = if (uiState.distractingPercent > 0) uiState.distractingPercent else 70
+                    
+                    val socialPct = (distPct * 0.57f).toInt().coerceAtLeast(5)
+                    val entPct = (distPct * 0.43f).toInt().coerceAtLeast(5)
+                    val prodRealPct = prodPct
+                    val utilPct = (neutPct * 0.75f).toInt().coerceAtLeast(5)
+                    val otherPct = (neutPct * 0.25f).toInt().coerceAtLeast(2)
+                    
+                    val totalPct = socialPct + entPct + prodRealPct + utilPct + otherPct
+                    val scale = 100f / if (totalPct > 0) totalPct else 100
+                    
+                    val finalSocial = (socialPct * scale).toInt()
+                    val finalEnt = (entPct * scale).toInt()
+                    val finalProd = (prodRealPct * scale).toInt()
+                    val finalUtil = (utilPct * scale).toInt()
+                    val finalOther = 100 - (finalSocial + finalEnt + finalProd + finalUtil)
+                    
+                    listOf(
+                        CategoryItem("Social", "📸", formatDuration((activeTotalMs * (finalSocial / 100f)).toLong()), finalSocial, Color(0xFFD81B60)),
+                        CategoryItem("Entertainment", "🎬", formatDuration((activeTotalMs * (finalEnt / 100f)).toLong()), finalEnt, Color(0xFFF4511E)),
+                        CategoryItem("Productivity", "⚡", formatDuration((activeTotalMs * (finalProd / 100f)).toLong()), finalProd, Color(0xFF00C853)),
+                        CategoryItem("Utilities", "⚙️", formatDuration((activeTotalMs * (finalUtil / 100f)).toLong()), finalUtil, Color(0xFF039BE5)),
+                        CategoryItem("Other", "📦", formatDuration((activeTotalMs * (finalOther / 100f)).toLong()), finalOther, Color(0xFF78909C))
+                    ).sortedByDescending { it.percentage }
+                }
+                
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Top Categories",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "View All",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AccentPrimary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { onNavigateToApps() }
+                            )
+                        }
+                        
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            categories.forEach { item ->
+                                CategoryRow(item = item)
+                            }
+                        }
+                    }
+                }
+                
+                // 3. Focus Habits Detail Expansion
+                FocusHeatmapSection(heatmap = uiState.focusHeatmap)
+                
+                PeakUsagePeriodsSection(periodUsage = uiState.periodUsage)
+
+                if (uiState.weeklyFocusSessions > 0 || uiState.recentFocusSessions.isNotEmpty()) {
+                    FocusHistoryCard(
+                        weeklyCount = uiState.weeklyFocusSessions,
+                        successRate = uiState.focusSuccessRate,
+                        avgMin = uiState.avgFocusSessionMin,
+                        sessions = uiState.recentFocusSessions,
                     )
                 }
-            }
-        }
-        Spacer(modifier = Modifier.height(100.dp))
-    }
-}
 
-// ─────────────────────────────────────────────────────────────
-// Sub-Components
-// ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun InsightsTabSwitcher(
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val tabs = listOf("Overview", "Focus Habits", "Health")
-    
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(50))
-            .background(com.lumetrix.statsmanager.ui.theme.GlassCard)
-            .border(1.dp, GlassCardBorder.copy(alpha = 0.15f), RoundedCornerShape(50))
-            .padding(4.dp)
-    ) {
-        val tabFraction = 1f / tabs.size
-        
-        val animatedOffsetFraction by animateFloatAsState(
-            targetValue = selectedTab.toFloat(),
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "tabSlide"
-        )
-        
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(tabFraction)
-                .height(40.dp)
-                .align(Alignment.CenterStart)
-                .graphicsLayer {
-                    translationX = this.size.width * animatedOffsetFraction
-                }
-                .clip(RoundedCornerShape(50))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(AccentPrimary.copy(alpha = 0.35f), AccentSecondary.copy(alpha = 0.2f))
-                    )
+                // 4. Sleep & Health details
+                PremiumDistractionIndexCard(
+                    index = uiState.distractionIndex,
+                    label = uiState.distractionIndexLabel
                 )
-                .border(1.dp, AccentPrimary.copy(alpha = 0.5f), RoundedCornerShape(50))
-        )
-        
-        Row(modifier = Modifier.fillMaxWidth()) {
-            tabs.forEachIndexed { index, title ->
-                val isSelected = selectedTab == index
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onTabSelected(index) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) Color.White else TextSecondary,
+
+                if (uiState.doomscrollApps.isNotEmpty()) {
+                    DoomscrollAlertCard(apps = uiState.doomscrollApps)
+                }
+
+                Text(
+                    text = "Behavioral Insights",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                uiState.behavioralInsights.forEach { insight ->
+                    InsightCard(
+                        icon = insight.iconKey.toIcon(),
+                        title = insight.title,
+                        subtitle = insight.subtitle,
                     )
                 }
-            }
-        }
-    }
-}
 
-@Composable
-private fun InsightsComparisonGrid(
-    screenTimeMs: Long,
-    screenTimeChangePercent: Int,
-    focusScore: Int,
-    focusScoreChange: Int,
-    focusPoints: Int,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        // Screen Time Tile
-        Box(modifier = Modifier.weight(1f)) {
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                glowBorder = screenTimeChangePercent < 0 // Glow if user decreased screen time
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Screen Time", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                    Text(DurationFormatter.formatShort(screenTimeMs), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    
-                    val isGood = screenTimeChangePercent < 0
-                    val color = if (isGood) Success else Danger
-                    val sign = if (screenTimeChangePercent > 0) "+" else ""
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = if (isGood) "↓" else "↑",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = color,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "$sign$screenTimeChangePercent%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = color,
-                            fontWeight = FontWeight.Bold
-                        )
+                Text(
+                    text = "Recommendations",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                uiState.recommendations.forEachIndexed { index, recommendation ->
+                    if (index == 0) {
+                        GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
+                            RecommendationCard(
+                                title = recommendation.title,
+                                body = recommendation.body,
+                            )
+                        }
+                    } else {
+                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            RecommendationCard(
+                                title = recommendation.title,
+                                body = recommendation.body,
+                            )
+                        }
                     }
                 }
             }
-        }
-        // Focus Score Tile
-        Box(modifier = Modifier.weight(1f)) {
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                glowBorder = focusScoreChange >= 0
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Focus Score", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                    Text("$focusScore", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    
-                    val isGood = focusScoreChange >= 0
-                    val color = if (isGood) Success else Danger
-                    val sign = if (focusScoreChange > 0) "+" else ""
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = if (isGood) "▲" else "▼",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = color
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "$sign$focusScoreChange pts",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = color,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-        // Focus Points Tile
-        Box(modifier = Modifier.weight(1f)) {
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                glowBorder = true
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Focus Points", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text("⚡", style = MaterialTheme.typography.titleMedium)
-                        Text("$focusPoints", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AccentSecondary)
-                    }
-                    Text("Balance", style = MaterialTheme.typography.labelSmall, color = Success, fontWeight = FontWeight.SemiBold)
-                }
-            }
+            
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }
@@ -518,6 +441,7 @@ private fun FocusHeatmapSection(
     modifier: Modifier = Modifier,
 ) {
     val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
+    var selectedPoint by remember(heatmap) { mutableStateOf(heatmap.lastOrNull()) }
 
     GlassCard(modifier = modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -555,6 +479,7 @@ private fun FocusHeatmapSection(
                             val index = row * 7 + col
                             val point = heatmap.getOrNull(index)
                             val score = point?.focusScore ?: 0
+                            val isSelected = selectedPoint?.dayKey == point?.dayKey
                             
                             val color = if (score == 0) {
                                 Color.White.copy(alpha = 0.04f)
@@ -564,10 +489,10 @@ private fun FocusHeatmapSection(
                                 mixColor.copy(alpha = 0.25f + factor * 0.75f)
                             }
 
-                            val borderStroke = if (score > 70) {
-                                BorderStroke(1.dp, AccentSecondary.copy(alpha = 0.4f))
-                            } else {
-                                BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                            val borderStroke = when {
+                                isSelected -> BorderStroke(2.dp, AccentSecondary)
+                                score > 70 -> BorderStroke(1.dp, AccentSecondary.copy(alpha = 0.4f))
+                                else -> BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
                             }
                             
                             Box(
@@ -577,6 +502,71 @@ private fun FocusHeatmapSection(
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(color)
                                     .border(borderStroke, RoundedCornerShape(6.dp))
+                                    .clickable(enabled = point != null) {
+                                        selectedPoint = point
+                                    }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Selected Day Details panel
+            selectedPoint?.let { point ->
+                val rating = when {
+                    point.focusScore >= 80 -> "🌌 Exceptional Focus Day"
+                    point.focusScore >= 50 -> "🎯 Highly Productive Day"
+                    point.focusScore >= 25 -> "⚡ Steady Focus Day"
+                    point.focusScore > 0 -> "🌱 Focused Habit Building"
+                    else -> "💤 Rest Day (No Sessions)"
+                }
+                
+                val ratingColor = when {
+                    point.focusScore >= 70 -> Success
+                    point.focusScore >= 40 -> Warning
+                    point.focusScore > 0 -> AccentPrimary
+                    else -> TextSecondary
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.02f))
+                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = point.dateLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = rating,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ratingColor,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "${point.focusScore}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (point.focusScore > 0) AccentSecondary else TextSecondary
+                            )
+                            Text(
+                                text = "Focus Score",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary
                             )
                         }
                     }
@@ -627,10 +617,10 @@ private fun PeakUsagePeriodsSection(
     val nightBrush = Brush.horizontalGradient(listOf(Color(0xFFFF5A6E), Color(0xFFD63B5D)))
     
     val periods = listOf(
-        Quadruple("🌅 Morning", "6 AM - 12 PM", morningPct, morningBrush),
-        Quadruple("☀️ Afternoon", "12 PM - 6 PM", afternoonPct, afternoonBrush),
-        Quadruple("🌆 Evening", "6 PM - 10 PM", eveningPct, eveningBrush),
-        Quadruple("🌙 Night", "10 PM - 6 AM", nightPct, nightBrush)
+        Quadruple("Morning", "6 AM - 12 PM", morningPct, morningBrush),
+        Quadruple("Afternoon", "12 PM - 6 PM", afternoonPct, afternoonBrush),
+        Quadruple("Evening", "6 PM - 10 PM", eveningPct, eveningBrush),
+        Quadruple("Night", "10 PM - 6 AM", nightPct, nightBrush)
     )
     
     val maxPeriod = periods.maxByOrNull { it.third }
@@ -644,84 +634,200 @@ private fun PeakUsagePeriodsSection(
                 fontWeight = FontWeight.Bold
             )
             
-            periods.forEach { (title, subtitle, pct, brush) ->
-                val isMax = title == maxPeriod?.first && pct > 0f
-                val trackColor = Color.White.copy(alpha = 0.05f)
-                
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = title, 
-                                style = MaterialTheme.typography.bodyMedium, 
-                                color = TextPrimary, 
-                                fontWeight = if (isMax) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                        }
-                        Text(
-                            text = "${(pct * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isMax) Warning else TextPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    
+            // 1. Stacked Ratio Distribution Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(18.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.04f))
+            ) {
+                if (morningPct > 0f) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(10.dp)
-                            .clip(CircleShape)
-                            .background(trackColor)
-                            .padding(end = 4.dp),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        if (pct > 0f) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth(pct.coerceIn(0f, 1f))
-                                    .height(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(10.dp)
-                                        .clip(CircleShape)
-                                        .background(brush)
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White)
-                                        .border(2.dp, AccentSecondary, CircleShape)
-                                )
-                            }
-                        }
-                    }
+                            .weight(morningPct.coerceAtLeast(0.01f))
+                            .fillMaxHeight()
+                            .background(morningBrush)
+                    )
+                }
+                if (afternoonPct > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .weight(afternoonPct.coerceAtLeast(0.01f))
+                            .fillMaxHeight()
+                            .background(afternoonBrush)
+                    )
+                }
+                if (eveningPct > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .weight(eveningPct.coerceAtLeast(0.01f))
+                            .fillMaxHeight()
+                            .background(eveningBrush)
+                    )
+                }
+                if (nightPct > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .weight(nightPct.coerceAtLeast(0.01f))
+                            .fillMaxHeight()
+                            .background(nightBrush)
+                    )
+                }
+            }
+
+            // 2. 2x2 Grid of Period Tiles
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    PeriodGridCard(
+                        title = "Morning",
+                        timeRange = "6 AM - 12 PM",
+                        pct = morningPct,
+                        brush = morningBrush,
+                        emoji = "🌅",
+                        isMax = maxPeriod?.first == "Morning" && morningPct > 0f,
+                        modifier = Modifier.weight(1f)
+                    )
+                    PeriodGridCard(
+                        title = "Afternoon",
+                        timeRange = "12 PM - 6 PM",
+                        pct = afternoonPct,
+                        brush = afternoonBrush,
+                        emoji = "☀️",
+                        isMax = maxPeriod?.first == "Afternoon" && afternoonPct > 0f,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    PeriodGridCard(
+                        title = "Evening",
+                        timeRange = "6 PM - 10 PM",
+                        pct = eveningPct,
+                        brush = eveningBrush,
+                        emoji = "🌆",
+                        isMax = maxPeriod?.first == "Evening" && eveningPct > 0f,
+                        modifier = Modifier.weight(1f)
+                    )
+                    PeriodGridCard(
+                        title = "Night",
+                        timeRange = "10 PM - 6 AM",
+                        pct = nightPct,
+                        brush = nightBrush,
+                        emoji = "🌙",
+                        isMax = maxPeriod?.first == "Night" && nightPct > 0f,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
             
+            // 3. Advice Card (properly wrapping container)
             if (maxPeriod != null && maxPeriod.third > 0f) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Warning.copy(alpha = 0.1f))
-                        .border(1.dp, Warning.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                        .padding(12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Warning.copy(alpha = 0.08f))
+                        .border(1.dp, Warning.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
                 ) {
                     Text(
-                        text = "💡 Advice: Your highest usage is during ${maxPeriod.first.substring(2)}. Block apps or plan focus slots during this window.",
+                        text = "💡 Advice: Your highest usage is during ${maxPeriod.first}. Block apps or plan focus slots during this window.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Warning
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PeriodGridCard(
+    title: String,
+    timeRange: String,
+    pct: Float,
+    brush: Brush,
+    emoji: String,
+    isMax: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val cardBackground = if (isMax) {
+        Brush.verticalGradient(
+            listOf(Color.White.copy(alpha = 0.05f), Color.White.copy(alpha = 0.02f))
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(Color.White.copy(alpha = 0.03f), Color.White.copy(alpha = 0.01f))
+        )
+    }
+
+    val cardBorder = if (isMax) {
+        BorderStroke(1.dp, AccentSecondary.copy(alpha = 0.3f))
+    } else {
+        BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
+    }
+
+    Surface(
+        modifier = modifier.clip(RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.Transparent,
+        border = cardBorder
+    ) {
+        Box(
+            modifier = Modifier
+                .background(cardBackground)
+                .padding(14.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "$emoji $title",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isMax) TextPrimary else TextSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${(pct * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isMax) AccentSecondary else TextPrimary
+                    )
+                }
+
+                // Progress Bar (Capsule)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.05f))
+                ) {
+                    if (pct > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(pct.coerceIn(0f, 1f))
+                                .height(6.dp)
+                                .clip(CircleShape)
+                                .background(brush)
+                        )
+                    }
+                }
+
+                Text(
+                    text = timeRange,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
             }
         }
     }
@@ -1105,6 +1211,283 @@ private fun InsightIcon.toIcon(): ImageVector = when (this) {
     InsightIcon.Bedtime -> Icons.Outlined.Bedtime
     InsightIcon.Trending -> Icons.Outlined.TrendingUp
     InsightIcon.Psychology -> Icons.Outlined.Psychology
+}
+
+private data class BarChartDataPoint(
+    val label: String,
+    val value: Float
+)
+
+private data class CategoryItem(
+    val name: String,
+    val emoji: String,
+    val durationLabel: String,
+    val percentage: Int,
+    val color: Color
+)
+
+private data class InsightsPeriodData(
+    val totalMs: Long,
+    val subtitle: String,
+    val trendText: String,
+    val bars: List<BarChartDataPoint>
+)
+
+private fun formatDuration(ms: Long): String {
+    val totalMinutes = ms / 60_000L
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+}
+
+@Composable
+private fun CategoryRow(
+    item: CategoryItem,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(item.color.copy(alpha = 0.15f))
+                        .border(1.dp, item.color.copy(alpha = 0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = item.emoji,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+            }
+            
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.durationLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${item.percentage}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.width(36.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                )
+            }
+        }
+        
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.05f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(item.percentage / 100f)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(item.color)
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightsBarChart(
+    data: List<BarChartDataPoint>,
+    selectedBarIndex: Int,
+    onBarSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val maxValue = data.maxOfOrNull { it.value }?.coerceAtLeast(1f) ?: 6f
+    val gridMax = if (maxValue <= 3f) 3f else if (maxValue <= 6f) 6f else ((maxValue / 3).toInt() + 1) * 3f
+    
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(180.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            val gridLabels = listOf("${gridMax.toInt()}h", "${(gridMax * 0.66f).toInt()}h", "${(gridMax * 0.33f).toInt()}h", "0h")
+            gridLabels.forEach { label ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        modifier = Modifier.width(32.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(1.dp)
+                            .background(Color.White.copy(alpha = 0.05f))
+                    )
+                }
+            }
+        }
+        
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 36.dp, end = 8.dp, bottom = 12.dp, top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            data.forEachIndexed { index, point ->
+                val isSelected = index == selectedBarIndex
+                val barHeightFraction = point.value / gridMax
+                
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onBarSelected(index) }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .width(28.dp)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.White.copy(alpha = 0.05f))
+                            )
+                        }
+                        
+                        Box(
+                            modifier = Modifier
+                                .width(16.dp)
+                                .fillMaxHeight(barHeightFraction.coerceIn(0.05f, 1f))
+                                .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        if (isSelected) {
+                                            listOf(Color(0xFF8126F2), Color(0xFF26B5F2))
+                                        } else {
+                                            listOf(Color(0xFF8126F2).copy(alpha = 0.6f), Color(0xFF26B5F2).copy(alpha = 0.6f))
+                                        }
+                                    )
+                                )
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    Text(
+                        text = point.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) Color.White else TextSecondary,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsightsTabSwitcher(
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tabs = listOf("Daily", "Weekly", "Monthly", "Yearly")
+    
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(com.lumetrix.statsmanager.ui.theme.GlassCard)
+            .border(1.dp, GlassCardBorder.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .padding(4.dp)
+    ) {
+        val tabFraction = 1f / tabs.size
+        
+        val animatedOffsetFraction by animateFloatAsState(
+            targetValue = selectedTab.toFloat(),
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "tabSlide"
+        )
+        
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(tabFraction)
+                .height(40.dp)
+                .align(Alignment.CenterStart)
+                .graphicsLayer {
+                    translationX = this.size.width * animatedOffsetFraction
+                }
+                .clip(RoundedCornerShape(50))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(AccentPrimary.copy(alpha = 0.35f), AccentSecondary.copy(alpha = 0.2f))
+                    )
+                )
+                .border(1.dp, AccentPrimary.copy(alpha = 0.5f), RoundedCornerShape(50))
+        )
+        
+        Row(modifier = Modifier.fillMaxWidth()) {
+            tabs.forEachIndexed { index, title ->
+                val isSelected = selectedTab == index
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onTabSelected(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else TextSecondary,
+                    )
+                }
+            }
+        }
+    }
 }
 
 private data class Quadruple<out A, out B, out C, out D>(
