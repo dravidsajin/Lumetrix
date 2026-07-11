@@ -23,11 +23,12 @@ class UsagePatternAnalyzer @Inject constructor(
         val lateNightMsThisWeek: Long,
         val lateNightChangePercent: Int,
         val peakDistractionHour: Int?,
+        val periodUsage: com.lumetrix.statsmanager.domain.model.PeriodUsage,
     )
 
     fun analyze(today: LocalDate): PatternAnalysis {
         if (!usageAccessChecker.hasUsageAccess()) {
-            return PatternAnalysis(0, 0, null)
+            return PatternAnalysis(0, 0, null, com.lumetrix.statsmanager.domain.model.PeriodUsage())
         }
 
         val thisWeekStart = today.minusDays(6)
@@ -38,13 +39,81 @@ class UsagePatternAnalyzer @Inject constructor(
         val lastWeekLateNight = collectLateNightMs(lastWeekStart, lastWeekEnd)
         val changePercent = percentChange(lastWeekLateNight, thisWeekLateNight)
         val peakHour = findPeakForegroundHour(today)
+        val periodUsage = collectUsageByPeriod(thisWeekStart, today)
 
         return PatternAnalysis(
             lateNightMsThisWeek = thisWeekLateNight,
             lateNightChangePercent = changePercent,
             peakDistractionHour = peakHour,
+            periodUsage = periodUsage,
         )
     }
+
+    fun collectUsageByPeriod(start: LocalDate, end: LocalDate): com.lumetrix.statsmanager.domain.model.PeriodUsage {
+        var morningMs = 0L
+        var afternoonMs = 0L
+        var eveningMs = 0L
+        var nightMs = 0L
+
+        val zone = ZoneId.systemDefault()
+        var current = start
+        while (!current.isAfter(end)) {
+            val dayStart = DateUtils.dayStartMillis(current)
+            val dayEnd = DateUtils.dayEndMillis(current)
+            var sessionStart: Long? = null
+
+            val events = usageStatsManager.queryEvents(dayStart, dayEnd)
+            val event = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event)
+                when (event.eventType) {
+                    UsageEvents.Event.ACTIVITY_RESUMED,
+                    UsageEvents.Event.MOVE_TO_FOREGROUND,
+                    -> sessionStart = event.timeStamp
+
+                    UsageEvents.Event.ACTIVITY_PAUSED,
+                    UsageEvents.Event.MOVE_TO_BACKGROUND,
+                    -> {
+                        val startMs = sessionStart ?: continue
+                        val endMs = event.timeStamp
+                        if (endMs > startMs) {
+                            var cursor = startMs
+                            while (cursor < endMs) {
+                                val instant = java.time.Instant.ofEpochMilli(cursor)
+                                val hour = instant.atZone(zone).hour
+                                val nextHour = instant.atZone(zone)
+                                    .withMinute(0)
+                                    .withSecond(0)
+                                    .withNano(0)
+                                    .plusHours(1)
+                                    .toInstant()
+                                    .toEpochMilli()
+                                val sliceEnd = minOf(nextHour, endMs)
+                                val duration = sliceEnd - cursor
+                                when (hour) {
+                                    in 6..11 -> morningMs += duration
+                                    in 12..17 -> afternoonMs += duration
+                                    in 18..21 -> eveningMs += duration
+                                    else -> nightMs += duration // 22, 23, 0, 1, 2, 3, 4, 5
+                                }
+                                cursor = sliceEnd
+                            }
+                        }
+                        sessionStart = null
+                    }
+                }
+            }
+            current = current.plusDays(1)
+        }
+
+        return com.lumetrix.statsmanager.domain.model.PeriodUsage(
+            morningMs = morningMs,
+            afternoonMs = afternoonMs,
+            eveningMs = eveningMs,
+            nightMs = nightMs,
+        )
+    }
+
 
     private fun collectLateNightMs(start: LocalDate, end: LocalDate): Long {
         var total = 0L

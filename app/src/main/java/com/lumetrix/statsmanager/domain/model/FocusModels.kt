@@ -38,3 +38,9 @@ data class ChainEvalResult(
     val remainingMin: Int = 0,
     val gateProgress: Float = 0f,
 )
+
+data class SimpleAppInfo(
+    val packageName: String,
+    val appName: String,
+)
+

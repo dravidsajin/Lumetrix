@@ -22,12 +22,17 @@ class InsightsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val isSyncing = MutableStateFlow(false)
+    private val selectedTab = MutableStateFlow(0)
 
     val uiState: StateFlow<InsightsUiState> = combine(
         repository.observeInsightsState(),
         isSyncing,
-    ) { insights, syncing ->
-        insights.copy(isSyncing = syncing)
+        selectedTab,
+    ) { insights, syncing, tab ->
+        insights.copy(
+            isSyncing = syncing,
+            selectedTab = tab,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
@@ -56,5 +61,9 @@ class InsightsViewModel @Inject constructor(
 
     fun openUsageAccessSettings(context: Context) {
         usageAccessChecker.launchUsageAccessSettings(context)
+    }
+
+    fun selectTab(index: Int) {
+        selectedTab.value = index
     }
 }

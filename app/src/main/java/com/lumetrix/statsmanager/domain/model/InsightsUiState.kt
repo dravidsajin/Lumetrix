@@ -41,7 +41,38 @@ data class InsightsUiState(
     val focusSuccessRate: Int = 0,
     val avgFocusSessionMin: Int = 0,
     val recentFocusSessions: List<FocusSessionItem> = emptyList(),
+
+    // --- Insights Revamp Extras ---
+    val selectedTab: Int = 0,
+    val screenTimeChangePercent: Int = 0,
+    val habitScoreChangePercent: Int = 0,
+    val focusPointsEarned: Int = 0,
+    val periodUsage: PeriodUsage = PeriodUsage(),
+    val focusHeatmap: List<FocusHeatmapPoint> = emptyList(),
+    val doomscrollApps: List<DoomscrollAppItem> = emptyList(),
 )
+
+data class FocusHeatmapPoint(
+    val dayKey: Int,
+    val dayLabel: String, // e.g. "Jul 10"
+    val dateLabel: String, // e.g. "Jul 10"
+    val focusScore: Int, // 0 to 100 focus score
+)
+
+data class DoomscrollAppItem(
+    val packageName: String,
+    val appName: String,
+    val avgSessionMin: Int,
+    val totalSessions: Int,
+)
+
+data class PeriodUsage(
+    val morningMs: Long = 0L,
+    val afternoonMs: Long = 0L,
+    val eveningMs: Long = 0L,
+    val nightMs: Long = 0L,
+)
+
 
 data class AchievementItem(
     val title: String,
