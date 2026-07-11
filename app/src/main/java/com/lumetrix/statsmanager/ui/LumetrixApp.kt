@@ -29,7 +29,11 @@ import com.lumetrix.statsmanager.ui.components.FloatingBottomBar
 import com.lumetrix.statsmanager.ui.dashboard.DashboardScreen
 import com.lumetrix.statsmanager.ui.focus.FocusScreen
 import com.lumetrix.statsmanager.ui.insights.InsightsScreen
-import com.lumetrix.statsmanager.ui.profile.ProfileScreen
+import com.lumetrix.statsmanager.ui.settings.SettingsScreen
+import com.lumetrix.statsmanager.ui.goals.GoalsScreen
+import com.lumetrix.statsmanager.ui.sleep.SleepScreen
+import com.lumetrix.statsmanager.ui.wellness.WellnessScreen
+import com.lumetrix.statsmanager.ui.report.WeeklyReportScreen
 import com.lumetrix.statsmanager.ui.navigation.LumetrixDestination
 import com.lumetrix.statsmanager.ui.navigation.lumetrixBottomNavItems
 import com.lumetrix.statsmanager.ui.navigation.lumetrixTabTransition
@@ -40,6 +44,8 @@ import com.lumetrix.statsmanager.ui.theme.LumetrixTokens
 fun LumetrixApp() {
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
     var appDetailsPackageName by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeOverlayScreen by rememberSaveable { mutableStateOf<String?>(null) }
+
     val systemNavInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomBarReserve = LumetrixTokens.BottomNavHeight +
         LumetrixTokens.BottomNavBottomPadding +
@@ -49,43 +55,71 @@ fun LumetrixApp() {
         AmbientBackground(modifier = Modifier.fillMaxSize())
 
         AnimatedContent(
-            targetState = appDetailsPackageName,
-            label = "appDetailsTransition"
-        ) { targetPackage ->
-            if (targetPackage != null) {
-                AppDetailsScreen(
-                    packageName = targetPackage,
-                    onNavigateBack = { appDetailsPackageName = null }
-                )
-            } else {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    AnimatedContent(
-                        targetState = selectedIndex,
-                        transitionSpec = { lumetrixTabTransition() },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = bottomBarReserve),
-                        label = "mainTabTransition",
-                    ) { index ->
-                        when (LumetrixDestination.entries[index]) {
-                            LumetrixDestination.Pulse -> DashboardScreen(
-                                onNavigateToAppDetails = { appDetailsPackageName = it }
-                            )
-                            LumetrixDestination.Apps -> AppsScreen(
-                                onNavigateToAppDetails = { appDetailsPackageName = it }
-                            )
-                            LumetrixDestination.Focus -> FocusScreen()
-                            LumetrixDestination.Insights -> InsightsScreen()
-                            LumetrixDestination.Profile -> ProfileScreen()
-                        }
-                    }
-
-                    FloatingBottomBar(
-                        items = lumetrixBottomNavItems(),
-                        selectedIndex = selectedIndex,
-                        onItemSelected = { selectedIndex = it },
-                        modifier = Modifier.align(Alignment.BottomCenter),
+            targetState = appDetailsPackageName ?: activeOverlayScreen,
+            label = "overlayRouteTransition"
+        ) { targetState ->
+            when {
+                appDetailsPackageName != null -> {
+                    AppDetailsScreen(
+                        packageName = appDetailsPackageName!!,
+                        onNavigateBack = { appDetailsPackageName = null }
                     )
+                }
+                targetState == "goals" -> {
+                    GoalsScreen(
+                        onBack = { activeOverlayScreen = null }
+                    )
+                }
+                targetState == "sleep" -> {
+                    SleepScreen(
+                        onBack = { activeOverlayScreen = null }
+                    )
+                }
+                targetState == "wellness" -> {
+                    WellnessScreen(
+                        onBack = { activeOverlayScreen = null }
+                    )
+                }
+                targetState == "report" -> {
+                    WeeklyReportScreen(
+                        onBack = { activeOverlayScreen = null }
+                    )
+                }
+                else -> {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AnimatedContent(
+                            targetState = selectedIndex,
+                            transitionSpec = { lumetrixTabTransition() },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = bottomBarReserve),
+                            label = "mainTabTransition",
+                        ) { index ->
+                            when (LumetrixDestination.entries[index]) {
+                                LumetrixDestination.Pulse -> DashboardScreen(
+                                    onNavigateToAppDetails = { appDetailsPackageName = it },
+                                    onNavigateToSleep = { activeOverlayScreen = "sleep" }
+                                )
+                                LumetrixDestination.Insights -> InsightsScreen(
+                                    onNavigateToApps = { selectedIndex = 3 }
+                                )
+                                LumetrixDestination.Focus -> FocusScreen()
+                                LumetrixDestination.Apps -> AppsScreen(
+                                    onNavigateToAppDetails = { appDetailsPackageName = it }
+                                )
+                                LumetrixDestination.Settings -> SettingsScreen(
+                                    onNavigateToOverlay = { activeOverlayScreen = it }
+                                )
+                            }
+                        }
+
+                        FloatingBottomBar(
+                            items = lumetrixBottomNavItems(),
+                            selectedIndex = selectedIndex,
+                            onItemSelected = { selectedIndex = it },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
                 }
             }
         }

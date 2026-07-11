@@ -91,4 +91,9 @@ data class ProfileUiState(
     val daysTrackedLabel: String = "0",
     val distractionReductionLabel: String = "—",
     val averageFocusScore: Int = 0,
+    val focusPointsBalance: Int = 0,
+    val levelProgress: Float = 0f,
+    val dailyScreenTimeTargetHours: Int = 4,
+    val dailyFocusScoreTarget: Int = 70,
+    val maxPickupsTarget: Int = 30,
 )

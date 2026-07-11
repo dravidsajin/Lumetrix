@@ -82,6 +82,67 @@ class UsageStatsCollector @Inject constructor(
             .sortedByDescending { it.usageDurationMs }
     }
 
+    fun collectRawTimelineSessions(date: LocalDate): List<RawTimelineSession> {
+        if (!usageAccessChecker.hasUsageAccess()) return emptyList()
+
+        val startMs = DateUtils.dayStartMillis(date)
+        val endMs = DateUtils.dayEndMillis(date)
+        val now = System.currentTimeMillis()
+
+        val activeSessions = mutableMapOf<String, Long>()
+        val sessions = mutableListOf<RawTimelineSession>()
+
+        val usageEvents = usageStatsManager.queryEvents(startMs, endMs)
+        val event = UsageEvents.Event()
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val packageName = event.packageName ?: continue
+            if (shouldSkipPackage(packageName)) continue
+
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    if (!activeSessions.containsKey(packageName)) {
+                        activeSessions[packageName] = event.timeStamp
+                    }
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    val start = activeSessions.remove(packageName) ?: continue
+                    val end = event.timeStamp
+                    if (end > start) {
+                        sessions.add(
+                            RawTimelineSession(
+                                packageName = packageName,
+                                startTimeMs = start,
+                                endTimeMs = end,
+                                durationMs = end - start
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        val finalEndMs = endMs.coerceAtMost(now)
+        activeSessions.forEach { (packageName, start) ->
+            if (finalEndMs > start) {
+                sessions.add(
+                    RawTimelineSession(
+                        packageName = packageName,
+                        startTimeMs = start,
+                        endTimeMs = finalEndMs,
+                        durationMs = finalEndMs - start
+                    )
+                )
+            }
+        }
+
+        return sessions
+            .filter { it.durationMs >= 60_000L }
+            .sortedByDescending { it.startTimeMs }
+    }
+
     fun collectScreenSessions(date: LocalDate): List<ScreenSessionEntity> {
         if (!usageAccessChecker.hasUsageAccess()) return emptyList()
 
@@ -213,3 +274,10 @@ class UsageStatsCollector @Inject constructor(
         }
     }
 }
+
+data class RawTimelineSession(
+    val packageName: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val durationMs: Long
+)

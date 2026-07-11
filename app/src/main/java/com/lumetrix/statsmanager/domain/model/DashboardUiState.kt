@@ -32,6 +32,15 @@ data class ChartDataPoint(
     val formattedLabel: String = "",
 )
 
+data class TimelineEvent(
+    val packageName: String,
+    val appName: String,
+    val startTimeLabel: String,
+    val endTimeLabel: String,
+    val durationLabel: String,
+    val categoryColor: Color,
+)
+
 data class DashboardUiState(
     val greeting: String = "",
     val userName: String = "You",
@@ -70,4 +79,10 @@ data class DashboardUiState(
     // Feature 3: Ghost Pickup Detector
     val ghostPickups: Int = 0,
     val habitScore: Int = 100,
+
+    // Redesign properties
+    val sleepLabel: String = "7h 48m",
+    val moodLabel: String = "😊 Calm",
+    val timelineEvents: List<TimelineEvent> = emptyList(),
+    val sparklineScores: List<Float> = emptyList(),
 )
