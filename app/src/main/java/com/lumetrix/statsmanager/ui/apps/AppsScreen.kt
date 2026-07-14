@@ -216,7 +216,7 @@ fun AppsScreen(
                         }
                         
                         UnlocksHourlyChart(
-                            unlockCount = uiState.unlockCount,
+                            unlockDistribution = uiState.unlockDistribution,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -249,6 +249,7 @@ fun AppsScreen(
                         }
                         
                         MiniWaveLineChart(
+                            notificationDistribution = uiState.notificationDistribution,
                             color = Color(0xFF8126F2),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -397,22 +398,35 @@ private fun AppsDonutChart(
 
 @Composable
 private fun MiniWaveLineChart(
+    notificationDistribution: List<Float>,
     color: Color,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier.height(70.dp).fillMaxWidth()) {
+        if (notificationDistribution.none { it < 1f }) return@Canvas
         val path = androidx.compose.ui.graphics.Path()
         val width = size.width
         val height = size.height
         
-        val points = listOf(
-            0f to 0.8f,
-            0.2f to 0.4f,
-            0.4f to 0.7f,
-            0.6f to 0.2f, // Peak!
-            0.8f to 0.5f,
-            1f to 0.3f
-        )
+        val points = if (notificationDistribution.size == 6) {
+            listOf(
+                0f to notificationDistribution[0],
+                0.2f to notificationDistribution[1],
+                0.4f to notificationDistribution[2],
+                0.6f to notificationDistribution[3],
+                0.8f to notificationDistribution[4],
+                1f to notificationDistribution[5]
+            )
+        } else {
+            listOf(
+                0f to 0.8f,
+                0.2f to 0.4f,
+                0.4f to 0.7f,
+                0.6f to 0.2f,
+                0.8f to 0.5f,
+                1f to 0.3f
+            )
+        }
         
         path.moveTo(0f, height * points[0].second)
         for (i in 1 until points.size) {
@@ -450,9 +464,10 @@ private fun MiniWaveLineChart(
             style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
         )
         
-        // Draw active glowing neon peak dot
-        val peakX = 0.6f * width
-        val peakY = 0.2f * height
+        // Draw active glowing neon peak dot dynamically based on lowest Y (highest notifications)
+        val peakPoint = points.minByOrNull { it.second } ?: points[3]
+        val peakX = peakPoint.first * width
+        val peakY = peakPoint.second * height
         drawCircle(
             color = color.copy(alpha = 0.3f),
             radius = 8.dp.toPx(),
@@ -468,13 +483,10 @@ private fun MiniWaveLineChart(
 
 @Composable
 private fun UnlocksHourlyChart(
-    unlockCount: Int,
+    unlockDistribution: List<Float>,
     modifier: Modifier = Modifier
 ) {
-    val barHeights = remember(unlockCount) {
-        val rand = java.util.Random(42)
-        List(24) { (rand.nextFloat() * 0.85f + 0.15f).coerceIn(0.15f, 1f) }
-    }
+    val barHeights = unlockDistribution
     
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -489,15 +501,20 @@ private fun UnlocksHourlyChart(
             verticalAlignment = Alignment.Bottom
         ) {
             barHeights.forEach { heightFraction ->
+                val hasData = heightFraction > 0f
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight(heightFraction)
+                        .fillMaxHeight(if (hasData) heightFraction.coerceIn(0.05f, 1f) else 0.05f)
                         .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(AccentSecondary, AccentPrimary)
-                            )
+                        .then(
+                            if (hasData) {
+                                Modifier.background(
+                                    Brush.verticalGradient(
+                                        listOf(AccentSecondary, AccentPrimary)
+                                    )
+                                )
+                            } else Modifier
                         )
                 )
             }

@@ -3,6 +3,7 @@ package com.lumetrix.statsmanager.domain.model
 enum class FocusState {
     Setup,
     Active,
+    Paused,
     Completed
 }
 
@@ -22,10 +23,15 @@ data class FocusUiState(
     val availableApps: List<SimpleAppInfo> = emptyList(),
     val showAddRuleDialog: Boolean = false,
 
-    // Feature 7: Pomodoro Stats
+    // Feature 7: Session History & Stats
     val recentSessions: List<FocusSessionItem> = emptyList(),
     val weeklyCompletedSessions: Int = 0,
     val weeklySuccessRate: Int = 0,
+
+    // Today's computed focus stats (derived from recentSessions)
+    val todayFocusMinutes: Int = 0,
+    val todaySessionCount: Int = 0,
+    val todaySuccessRate: Int = 0,
 ) {
     val remainingTimeLabel: String
         get() {
@@ -35,4 +41,3 @@ data class FocusUiState(
             return String.format("%02d:%02d", minutes, seconds)
         }
 }
-

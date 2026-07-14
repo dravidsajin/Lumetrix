@@ -25,6 +25,7 @@ class UsageInsightsAnalyzer @Inject constructor(
         val behavioralInsights: List<BehavioralInsightItem>,
         val recommendations: List<RecommendationItem>,
         val periodUsage: com.lumetrix.statsmanager.domain.model.PeriodUsage,
+        val todayPeriodUsage: com.lumetrix.statsmanager.domain.model.PeriodUsage,
     )
 
     fun analyze(
@@ -129,6 +130,7 @@ class UsageInsightsAnalyzer @Inject constructor(
             },
             recommendations = recommendations,
             periodUsage = patterns.periodUsage,
+            todayPeriodUsage = patterns.todayPeriodUsage,
         )
     }
 

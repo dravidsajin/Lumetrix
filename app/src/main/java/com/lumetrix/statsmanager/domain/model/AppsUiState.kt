@@ -8,5 +8,7 @@ data class AppsUiState(
     val selectedCategory: AppCategory? = null,
     val totalTimeLabel: String = "0m",
     val unlockCount: Int = 0,
-    val notificationCount: Int = 0
+    val notificationCount: Int = 0,
+    val unlockDistribution: List<Float> = emptyList(),
+    val notificationDistribution: List<Float> = emptyList()
 )

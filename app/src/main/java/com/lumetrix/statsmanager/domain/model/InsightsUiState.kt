@@ -48,6 +48,7 @@ data class InsightsUiState(
     val habitScoreChangePercent: Int = 0,
     val focusPointsEarned: Int = 0,
     val periodUsage: PeriodUsage = PeriodUsage(),
+    val todayPeriodUsage: PeriodUsage = PeriodUsage(),
     val focusHeatmap: List<FocusHeatmapPoint> = emptyList(),
     val doomscrollApps: List<DoomscrollAppItem> = emptyList(),
 )

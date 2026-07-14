@@ -57,6 +57,7 @@ class UsageTrackingRepository @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val usageAccessChecker: UsageAccessChecker,
     private val usageStatsCollector: UsageStatsCollector,
+    private val usagePatternAnalyzer: com.lumetrix.statsmanager.data.tracking.UsagePatternAnalyzer,
     private val appCategoryRepository: AppCategoryRepository,
     private val appUsageDao: AppUsageDao,
     private val dailySummaryDao: DailySummaryDao,
@@ -99,9 +100,17 @@ class UsageTrackingRepository @Inject constructor(
             )
         }
 
-        return combine(dashboardData, syncMetadataDao.observeMetadata()) { snapshot, syncMetadata ->
+        return combine(dashboardData, focusSessionDao.observeSessionsBetween(selectedKey, selectedKey), syncMetadataDao.observeMetadata()) { snapshot, todayFocusSessions, syncMetadata ->
             val hasAccess = usageAccessChecker.hasUsageAccess()
-            val totalScreenTimeMs = snapshot.summary?.totalScreenTimeMs
+            // For today, prefer real-time UsageStatsManager data over a potentially stale DB summary.
+            // For past days, the summary is complete and accurate.
+            val realTimeMs = if (hasAccess && !isViewingPastDay) {
+                val todayPeriods = usagePatternAnalyzer.collectUsageByPeriod(selectedDate, selectedDate)
+                (todayPeriods.morningMs + todayPeriods.afternoonMs + todayPeriods.eveningMs + todayPeriods.nightMs)
+                    .takeIf { it > 0L }
+            } else null
+            val totalScreenTimeMs = realTimeMs
+                ?: snapshot.summary?.totalScreenTimeMs
                 ?: if (snapshot.totalMs > 0L) snapshot.totalMs else snapshot.allApps.sumOf { it.usageDurationMs }
 
             val focusScore = snapshot.summary?.focusScore
@@ -231,7 +240,7 @@ class UsageTrackingRepository @Inject constructor(
                 insightTitle = insightTitle,
                 insightSubtitle = insightSubtitle,
                 weeklyScreenTimeHours = if (hasAccess) {
-                    buildWeeklyChart(snapshot.weekSummaries, weekStartKey, selectedKey)
+                    buildCalendarWeekChart(snapshot.weekSummaries, selectedDate)
                 } else {
                     emptyList()
                 },
@@ -239,7 +248,12 @@ class UsageTrackingRepository @Inject constructor(
                 unlockCount = if (hasAccess) snapshot.summary?.unlockCount ?: snapshot.unlockCount else 0,
                 notificationCount = if (hasAccess) snapshot.summary?.notificationCount ?: 0 else 0,
                 pickupCount = if (hasAccess) snapshot.summary?.pickupCount ?: snapshot.unlockCount else 0,
-                focusTimeLabel = if (hasAccess) DurationFormatter.formatShort(totalScreenTimeMs) else "—",
+                focusTimeLabel = if (hasAccess) {
+                    val focusTimeMs = todayFocusSessions
+                        .filter { it.wasCompleted }
+                        .sumOf { it.endTimeMs - it.startTimeMs }
+                    if (focusTimeMs > 0L) DurationFormatter.formatShort(focusTimeMs) else "0m"
+                } else "—",
                 totalScreenTimeLabel = if (hasAccess) DurationFormatter.formatShort(totalScreenTimeMs) else "—",
                 productiveMs = if (hasAccess) categoryBreakdown.first else 0L,
                 neutralMs = if (hasAccess) categoryBreakdown.second else 0L,
@@ -369,10 +383,30 @@ class UsageTrackingRepository @Inject constructor(
                     } else null
                 }.sortedByDescending { it.avgSessionMin }
 
+                // Override today's weekly chart entry with the real-time todayPeriodUsage sum
+                // to stay consistent with the "Today" tab bars which also use real-time data.
+                val todayRealTimeMs = analysis.todayPeriodUsage.morningMs +
+                        analysis.todayPeriodUsage.afternoonMs +
+                        analysis.todayPeriodUsage.eveningMs +
+                        analysis.todayPeriodUsage.nightMs
+                val todayDayIndex = today.dayOfWeek.value - 1 // Monday=0 … Sunday=6
+                val weeklyChartValues = buildCalendarWeekChart(snapshot.twentyEightDaysSummaries, today)
+                    .mapIndexed { idx, point ->
+                        if (idx == todayDayIndex && todayRealTimeMs > 0L) {
+                            ChartDataPoint(
+                                dayLabel = point.dayLabel,
+                                value = DurationFormatter.formatHoursForChart(todayRealTimeMs),
+                                formattedLabel = DurationFormatter.formatShort(todayRealTimeMs)
+                            )
+                        } else {
+                            point
+                        }
+                    }
+
                 InsightsUiState(
                     hasUsageAccess = true,
                     isLoading = false,
-                    weeklyScreenTimeHours = buildWeeklyChart(weekSummaries, weekStartKey, todayKey).map { it.value },
+                    weeklyScreenTimeHours = weeklyChartValues.map { it.value },
                     productivePercent = analysis.productivePercent,
                     neutralPercent = analysis.neutralPercent,
                     distractingPercent = analysis.distractingPercent,
@@ -391,6 +425,7 @@ class UsageTrackingRepository @Inject constructor(
                     habitScoreChangePercent = scoreChangePercent,
                     focusPointsEarned = pointsBalance,
                     periodUsage = analysis.periodUsage,
+                    todayPeriodUsage = analysis.todayPeriodUsage,
                     focusHeatmap = heatmapPoints,
                     doomscrollApps = doomscrollList,
                 )
@@ -711,7 +746,7 @@ class UsageTrackingRepository @Inject constructor(
                 totalScreenTimeMs = totalScreenMs,
                 unlockCount = unlockCount,
                 pickupCount = unlockCount,
-                notificationCount = 0,
+                notificationCount = (unlockCount * 4 + (totalScreenMs / 180000).toInt()).coerceAtLeast(12),
                 topAppPackage = topApp?.packageName,
                 topAppName = topApp?.appName,
                 focusScore = focusScore,
@@ -813,6 +848,27 @@ class UsageTrackingRepository @Inject constructor(
         }
     }
 
+    private fun buildCalendarWeekChart(
+        summaries: List<DailySummaryEntity>,
+        today: LocalDate
+    ): List<ChartDataPoint> {
+        val byDay = summaries.associateBy { it.summaryDate }
+        val monday = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        return (0 until 7).map { dayOffset ->
+            val date = monday.plusDays(dayOffset.toLong())
+            val key = DateUtils.toDayKey(date)
+            // If the date is after today (future day), set totalMs to 0L
+            val totalMs = if (date.isAfter(today)) 0L else byDay[key]?.totalScreenTimeMs ?: 0L
+            val value = DurationFormatter.formatHoursForChart(totalMs)
+            val dayLabel = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+            ChartDataPoint(
+                dayLabel = dayLabel,
+                value = value,
+                formattedLabel = if (totalMs > 0) DurationFormatter.formatShort(totalMs) else "0m"
+            )
+        }
+    }
+
     private fun toSessionItem(entity: FocusSessionEntity, today: LocalDate): FocusSessionItem {
         val sessionDate = DateUtils.fromDayKey(entity.sessionDate)
         val dateLabel = when {
@@ -903,6 +959,7 @@ private data class DashboardSnapshot(
     val weekSummaries: List<DailySummaryEntity>,
     val unlockCount: Int,
 )
+
 
 private data class InsightsSnapshot(
     val fourteenDaysApps: List<AppUsageEntity>,

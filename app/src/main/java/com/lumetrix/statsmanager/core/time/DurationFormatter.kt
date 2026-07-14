@@ -6,7 +6,7 @@ object DurationFormatter {
 
     fun formatShort(durationMs: Long): String {
         if (durationMs <= 0L) return "0m"
-        val totalMinutes = (durationMs / 60_000.0).roundToInt()
+        val totalMinutes = (durationMs / 60_000.0).roundToInt().coerceAtLeast(1)
         val hours = totalMinutes / 60
         val minutes = totalMinutes % 60
         return when {
