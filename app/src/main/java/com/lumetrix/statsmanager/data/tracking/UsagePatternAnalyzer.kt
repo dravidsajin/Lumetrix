@@ -24,11 +24,16 @@ class UsagePatternAnalyzer @Inject constructor(
         val lateNightChangePercent: Int,
         val peakDistractionHour: Int?,
         val periodUsage: com.lumetrix.statsmanager.domain.model.PeriodUsage,
+        val todayPeriodUsage: com.lumetrix.statsmanager.domain.model.PeriodUsage,
     )
 
     fun analyze(today: LocalDate): PatternAnalysis {
         if (!usageAccessChecker.hasUsageAccess()) {
-            return PatternAnalysis(0, 0, null, com.lumetrix.statsmanager.domain.model.PeriodUsage())
+            return PatternAnalysis(
+                0, 0, null, 
+                com.lumetrix.statsmanager.domain.model.PeriodUsage(),
+                com.lumetrix.statsmanager.domain.model.PeriodUsage()
+            )
         }
 
         val thisWeekStart = today.minusDays(6)
@@ -40,12 +45,14 @@ class UsagePatternAnalyzer @Inject constructor(
         val changePercent = percentChange(lastWeekLateNight, thisWeekLateNight)
         val peakHour = findPeakForegroundHour(today)
         val periodUsage = collectUsageByPeriod(thisWeekStart, today)
+        val todayPeriodUsage = collectUsageByPeriod(today, today)
 
         return PatternAnalysis(
             lateNightMsThisWeek = thisWeekLateNight,
             lateNightChangePercent = changePercent,
             peakDistractionHour = peakHour,
             periodUsage = periodUsage,
+            todayPeriodUsage = todayPeriodUsage,
         )
     }
 

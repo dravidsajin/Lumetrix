@@ -42,5 +42,8 @@ interface UnlockEventDao {
     /** Returns full unlock event records for a given day (used by GhostPickupAnalyzer). */
     @Query("SELECT * FROM unlock_events WHERE event_date = :dayKey ORDER BY timestamp_ms ASC")
     suspend fun getUnlockEventsForDate(dayKey: Int): List<com.lumetrix.statsmanager.data.local.entity.UnlockEventEntity>
+
+    @Query("SELECT * FROM unlock_events WHERE event_date = :dayKey ORDER BY timestamp_ms ASC")
+    fun observeUnlockEventsForDate(dayKey: Int): Flow<List<com.lumetrix.statsmanager.data.local.entity.UnlockEventEntity>>
 }
 

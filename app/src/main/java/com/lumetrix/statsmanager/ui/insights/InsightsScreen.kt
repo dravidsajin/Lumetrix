@@ -172,54 +172,100 @@ fun InsightsScreen(
                 val totalMs = (uiState.weeklyScreenTimeHours.sum() * 60 * 60 * 1000).toLong()
                 
                 // Track selected bar state for chart interactivity
-                var selectedBarIndex by remember(uiState.selectedTab) { mutableStateOf(if (uiState.selectedTab == 1) 4 else 0) }
+                val initialSelectedBarIndex = remember(uiState.selectedTab) {
+                    val now = java.time.LocalDateTime.now()
+                    when (uiState.selectedTab) {
+                        0 -> { // Daily
+                            when (now.hour) {
+                                in 2..5 -> 1
+                                in 6..9 -> 2
+                                in 10..13 -> 3
+                                in 14..17 -> 4
+                                in 18..21 -> 5
+                                else -> 0
+                            }
+                        }
+                        1 -> { // Weekly (Mon to Sun)
+                            (now.dayOfWeek.value - 1).coerceIn(0, 6)
+                        }
+                        2 -> { // Monthly (Week 1 to Week 4)
+                            ((now.dayOfMonth - 1) / 7).coerceIn(0, 3)
+                        }
+                        3 -> { // Yearly (Q1 to Q4)
+                            ((now.monthValue - 1) / 3).coerceIn(0, 3)
+                        }
+                        else -> 0
+                    }
+                }
+                var selectedBarIndex by remember(uiState.selectedTab) { mutableStateOf(initialSelectedBarIndex) }
                 
-                val periodData = remember(uiState.selectedTab, uiState.weeklyScreenTimeHours, uiState.periodUsage) {
+                val periodData = remember(uiState.selectedTab, uiState.weeklyScreenTimeHours, uiState.todayPeriodUsage) {
                     when (uiState.selectedTab) {
                         0 -> { // Daily (Today)
-                            val todayHours = uiState.weeklyScreenTimeHours.lastOrNull() ?: 3.5f
-                            val todayMs = (todayHours * 60 * 60 * 1000).toLong()
+                            val todayMs = uiState.todayPeriodUsage.morningMs +
+                                    uiState.todayPeriodUsage.afternoonMs +
+                                    uiState.todayPeriodUsage.eveningMs +
+                                    uiState.todayPeriodUsage.nightMs
                             val change = uiState.screenTimeChangePercent
                             val trend = if (change >= 0) "▲ $change% vs yesterday" else "▼ ${Math.abs(change)}% vs yesterday"
                             
-                            val morning = uiState.periodUsage.morningMs / 3600000f
-                            val afternoon = uiState.periodUsage.afternoonMs / 3600000f
-                            val evening = uiState.periodUsage.eveningMs / 3600000f
-                            val night = uiState.periodUsage.nightMs / 3600000f
+                            val morningMs = uiState.todayPeriodUsage.morningMs
+                            val afternoonMs = uiState.todayPeriodUsage.afternoonMs
+                            val eveningMs = uiState.todayPeriodUsage.eveningMs
+                            val nightMs = uiState.todayPeriodUsage.nightMs
+                            
                             val bars = listOf(
-                                BarChartDataPoint("12am", (night * 0.4f).coerceAtLeast(0.2f)),
-                                BarChartDataPoint("4am", (night * 0.6f + morning * 0.1f).coerceAtLeast(0.1f)),
-                                BarChartDataPoint("8am", (morning * 0.9f).coerceAtLeast(1.5f)),
-                                BarChartDataPoint("12pm", (afternoon * 0.7f).coerceAtLeast(2.0f)),
-                                BarChartDataPoint("4pm", (afternoon * 0.3f + evening * 0.8f).coerceAtLeast(2.5f)),
-                                BarChartDataPoint("8pm", (evening * 0.2f + night * 0.2f).coerceAtLeast(1.0f))
+                                BarChartDataPoint("12am", (nightMs * 0.3f) / 3600000f, (nightMs * 0.3f).toLong()),
+                                BarChartDataPoint("4am", (nightMs * 0.7f + morningMs * 0.2f) / 3600000f, (nightMs * 0.7f + morningMs * 0.2f).toLong()),
+                                BarChartDataPoint("8am", (morningMs * 0.8f) / 3600000f, (morningMs * 0.8f).toLong()),
+                                BarChartDataPoint("12pm", (afternoonMs * 0.7f) / 3600000f, (afternoonMs * 0.7f).toLong()),
+                                BarChartDataPoint("4pm", (afternoonMs * 0.3f + eveningMs * 0.7f) / 3600000f, (afternoonMs * 0.3f + eveningMs * 0.7f).toLong()),
+                                BarChartDataPoint("8pm", (eveningMs * 0.3f) / 3600000f, (eveningMs * 0.3f).toLong())
                             )
                             InsightsPeriodData(todayMs, "Today", trend, bars)
                         }
                         2 -> { // Monthly
-                            val monthlyMs = (totalMs * 4.25f).toLong()
+                            val currentDayOfMonth = java.time.LocalDate.now().dayOfMonth
+                            val currentWeekIndex = ((currentDayOfMonth - 1) / 7).coerceIn(0, 3)
+                            
+                            val weeklyAvg = uiState.weeklyScreenTimeHours.sum()
+                            val week1Val = if (currentWeekIndex >= 0) weeklyAvg * 0.95f else 0f
+                            val week2Val = if (currentWeekIndex >= 1) weeklyAvg * 1.05f else 0f
+                            val week3Val = if (currentWeekIndex >= 2) weeklyAvg * 0.85f else 0f
+                            val week4Val = if (currentWeekIndex >= 3) weeklyAvg * 1.15f else 0f
+                            
+                            val bars = listOf(
+                                BarChartDataPoint("Week 1", week1Val, Math.round(week1Val * 3600000.0)),
+                                BarChartDataPoint("Week 2", week2Val, Math.round(week2Val * 3600000.0)),
+                                BarChartDataPoint("Week 3", week3Val, Math.round(week3Val * 3600000.0)),
+                                BarChartDataPoint("Week 4", week4Val, Math.round(week4Val * 3600000.0))
+                            )
+                            val monthlyMs = bars.sumOf { it.rawMs }
+                            
                             val change = (uiState.screenTimeChangePercent * 0.8f).toInt()
                             val trend = if (change >= 0) "▲ $change% vs last month" else "▼ ${Math.abs(change)}% vs last month"
-                            val weeklyAvg = uiState.weeklyScreenTimeHours.sum()
-                            val bars = listOf(
-                                BarChartDataPoint("Week 1", weeklyAvg * 0.95f),
-                                BarChartDataPoint("Week 2", weeklyAvg * 1.05f),
-                                BarChartDataPoint("Week 3", weeklyAvg * 0.85f),
-                                BarChartDataPoint("Week 4", weeklyAvg * 1.15f)
-                            )
                             InsightsPeriodData(monthlyMs, "This Month", trend, bars)
                         }
                         3 -> { // Yearly
-                            val yearlyMs = (totalMs * 52f).toLong()
+                            val currentMonth = java.time.LocalDate.now().monthValue
+                            val currentQuarterIndex = (currentMonth - 1) / 3
+                            
+                            val quarterAvg = uiState.weeklyScreenTimeHours.sum() * 13f
+                            val q1Val = if (currentQuarterIndex >= 0) quarterAvg * 0.9f else 0f
+                            val q2Val = if (currentQuarterIndex >= 1) quarterAvg * 1.1f else 0f
+                            val q3Val = if (currentQuarterIndex >= 2) quarterAvg * 0.8f else 0f
+                            val q4Val = if (currentQuarterIndex >= 3) quarterAvg * 1.2f else 0f
+                            
+                            val bars = listOf(
+                                BarChartDataPoint("Q1", q1Val, Math.round(q1Val * 3600000.0)),
+                                BarChartDataPoint("Q2", q2Val, Math.round(q2Val * 3600000.0)),
+                                BarChartDataPoint("Q3", q3Val, Math.round(q3Val * 3600000.0)),
+                                BarChartDataPoint("Q4", q4Val, Math.round(q4Val * 3600000.0))
+                            )
+                            val yearlyMs = bars.sumOf { it.rawMs }
+                            
                             val change = (uiState.screenTimeChangePercent * 0.5f).toInt()
                             val trend = if (change >= 0) "▲ $change% vs last year" else "▼ ${Math.abs(change)}% vs last year"
-                            val quarterAvg = uiState.weeklyScreenTimeHours.sum() * 13f
-                            val bars = listOf(
-                                BarChartDataPoint("Q1", quarterAvg * 0.9f),
-                                BarChartDataPoint("Q2", quarterAvg * 1.1f),
-                                BarChartDataPoint("Q3", quarterAvg * 0.8f),
-                                BarChartDataPoint("Q4", quarterAvg * 1.2f)
-                            )
                             InsightsPeriodData(yearlyMs, "This Year", trend, bars)
                         }
                         else -> { // Weekly (Tab 1)
@@ -229,10 +275,61 @@ fun InsightsScreen(
                             val bars = uiState.weeklyScreenTimeHours.ifEmpty {
                                 listOf(3.5f, 2.0f, 4.0f, 1.8f, 5.0f, 1.8f, 3.0f)
                             }.mapIndexed { index, h ->
-                                BarChartDataPoint(labels.getOrElse(index) { "${index + 1}" }, h)
+                                BarChartDataPoint(
+                                    labels.getOrElse(index) { "${index + 1}" },
+                                    h,
+                                    Math.round(h * 3600000.0)
+                                )
                             }
-                            InsightsPeriodData(totalMs, "This Week", trend, bars)
+                            val weeklyTotalMs = bars.sumOf { it.rawMs }
+                            InsightsPeriodData(weeklyTotalMs, "This Week", trend, bars)
                         }
+                    }
+                }
+                
+                val selectedBar = periodData.bars.getOrNull(selectedBarIndex)
+                val displayMs = if (selectedBar != null) {
+                    if (selectedBar.rawMs > 0L) {
+                        selectedBar.rawMs
+                    } else {
+                        Math.round(selectedBar.value * 3600000.0)
+                    }
+                } else {
+                    periodData.totalMs
+                }
+                
+                val subheaderText = remember(uiState.selectedTab, selectedBarIndex, periodData.subtitle, selectedBar) {
+                    val prefix = periodData.subtitle
+                    if (selectedBar != null) {
+                        val detail = when (uiState.selectedTab) {
+                            0 -> { // Daily
+                                when (selectedBar.label) {
+                                    "12am" -> "12 AM - 4 AM"
+                                    "4am" -> "4 AM - 8 AM"
+                                    "8am" -> "8 AM - 12 PM"
+                                    "12pm" -> "12 PM - 4 PM"
+                                    "4pm" -> "4 PM - 8 PM"
+                                    "8pm" -> "8 PM - 12 AM"
+                                    else -> selectedBar.label
+                                }
+                            }
+                            1 -> { // Weekly
+                                when (selectedBar.label) {
+                                    "Mon" -> "Monday"
+                                    "Tue" -> "Tuesday"
+                                    "Wed" -> "Wednesday"
+                                    "Thu" -> "Thursday"
+                                    "Fri" -> "Friday"
+                                    "Sat" -> "Saturday"
+                                    "Sun" -> "Sunday"
+                                    else -> selectedBar.label
+                                }
+                            }
+                            else -> selectedBar.label
+                        }
+                        "$prefix • $detail"
+                    } else {
+                        prefix
                     }
                 }
                 
@@ -247,7 +344,7 @@ fun InsightsScreen(
                                 color = TextPrimary
                             )
                             Text(
-                                text = periodData.subtitle,
+                                text = subheaderText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary
                             )
@@ -259,7 +356,7 @@ fun InsightsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = formatDuration(periodData.totalMs),
+                                text = formatDuration(displayMs),
                                 style = MaterialTheme.typography.headlineLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = TextPrimary
@@ -377,56 +474,6 @@ fun InsightsScreen(
                         avgMin = uiState.avgFocusSessionMin,
                         sessions = uiState.recentFocusSessions,
                     )
-                }
-
-                // 4. Sleep & Health details
-                PremiumDistractionIndexCard(
-                    index = uiState.distractionIndex,
-                    label = uiState.distractionIndexLabel
-                )
-
-                if (uiState.doomscrollApps.isNotEmpty()) {
-                    DoomscrollAlertCard(apps = uiState.doomscrollApps)
-                }
-
-                Text(
-                    text = "Behavioral Insights",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-
-                uiState.behavioralInsights.forEach { insight ->
-                    InsightCard(
-                        icon = insight.iconKey.toIcon(),
-                        title = insight.title,
-                        subtitle = insight.subtitle,
-                    )
-                }
-
-                Text(
-                    text = "Recommendations",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-
-                uiState.recommendations.forEachIndexed { index, recommendation ->
-                    if (index == 0) {
-                        GradientGlassCard(modifier = Modifier.fillMaxWidth()) {
-                            RecommendationCard(
-                                title = recommendation.title,
-                                body = recommendation.body,
-                            )
-                        }
-                    } else {
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            RecommendationCard(
-                                title = recommendation.title,
-                                body = recommendation.body,
-                            )
-                        }
-                    }
                 }
             }
             
@@ -1215,7 +1262,8 @@ private fun InsightIcon.toIcon(): ImageVector = when (this) {
 
 private data class BarChartDataPoint(
     val label: String,
-    val value: Float
+    val value: Float,
+    val rawMs: Long = 0L
 )
 
 private data class CategoryItem(
@@ -1234,10 +1282,15 @@ private data class InsightsPeriodData(
 )
 
 private fun formatDuration(ms: Long): String {
-    val totalMinutes = ms / 60_000L
+    if (ms <= 0L) return "0m"
+    val totalMinutes = Math.round(ms / 60_000.0).coerceAtLeast(1L)
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
-    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+    return if (hours > 0) {
+        if (minutes > 0) "${hours}h ${minutes}m" else "${hours}h"
+    } else {
+        "${minutes}m"
+    }
 }
 
 @Composable
@@ -1392,19 +1445,24 @@ private fun InsightsBarChart(
                             )
                         }
                         
+                        val hasData = point.value > 0f
                         Box(
                             modifier = Modifier
                                 .width(16.dp)
-                                .fillMaxHeight(barHeightFraction.coerceIn(0.05f, 1f))
+                                .fillMaxHeight(if (hasData) barHeightFraction.coerceIn(0.05f, 1f) else 0.05f)
                                 .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                                .background(
-                                    Brush.verticalGradient(
-                                        if (isSelected) {
-                                            listOf(Color(0xFF8126F2), Color(0xFF26B5F2))
-                                        } else {
-                                            listOf(Color(0xFF8126F2).copy(alpha = 0.6f), Color(0xFF26B5F2).copy(alpha = 0.6f))
-                                        }
-                                    )
+                                .then(
+                                    if (hasData) {
+                                        Modifier.background(
+                                            Brush.verticalGradient(
+                                                if (isSelected) {
+                                                    listOf(Color(0xFF8126F2), Color(0xFF26B5F2))
+                                                } else {
+                                                    listOf(Color(0xFF8126F2).copy(alpha = 0.6f), Color(0xFF26B5F2).copy(alpha = 0.6f))
+                                                }
+                                            )
+                                        )
+                                    } else Modifier
                                 )
                         )
                     }
