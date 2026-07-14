@@ -46,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
 import com.lumetrix.statsmanager.ui.theme.GlassCardBorder
@@ -89,31 +91,51 @@ private data class WellnessActivity(
 @Composable
 fun WellnessScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    wellnessViewModel: WellnessViewModel = viewModel()
 ) {
     val context = LocalContext.current
     var activeActivity by remember { mutableStateOf<WellnessActivity?>(null) }
-    var waterCount by remember { mutableIntStateOf(3) }
 
-    val activities = remember {
+    val waterCount by wellnessViewModel.waterCount.collectAsState()
+    val postureChecks by wellnessViewModel.postureChecks.collectAsState()
+    val completedActivities by wellnessViewModel.completedActivities.collectAsState()
+
+    val activities = remember(waterCount, completedActivities) {
         listOf(
-            WellnessActivity("breath", "🧘", "Breathing", "2 min", 120, AccentPrimary, "breathing"),
-            WellnessActivity("meditate", "🌳", "Meditation", "10 min", 600, AccentSecondary, "timer"),
-            WellnessActivity("stretch", "🤸", "Stretch", "5 min", 300, Color(0xFFE040FB), "timer"),
-            WellnessActivity("eye", "👁️", "Eye Exercise", "1 min", 60, Color(0xFF26C6DA), "timer"),
+            WellnessActivity("breath", "🧘", "Breathing", if (completedActivities.contains("breath")) "Done" else "2 min", 120, AccentPrimary, "breathing"),
+            WellnessActivity("meditate", "🌳", "Meditation", if (completedActivities.contains("meditate")) "Done" else "10 min", 600, AccentSecondary, "timer"),
+            WellnessActivity("stretch", "🤸", "Stretch", if (completedActivities.contains("stretch")) "Done" else "5 min", 300, Color(0xFFE040FB), "timer"),
+            WellnessActivity("eye", "👁️", "Eye Exercise", if (completedActivities.contains("eye")) "Done" else "1 min", 60, Color(0xFF26C6DA), "timer"),
             WellnessActivity("water", "💧", "Water", "$waterCount/8 glasses", 0, Color(0xFF42A5F5), "counter"),
             WellnessActivity("posture", "🧍", "Posture", "Check", 0, Color(0xFFFFB74D), "checklist"),
-            WellnessActivity("walk", "🚶", "Walking", "15 min", 900, Success, "timer"),
-            WellnessActivity("mindful", "🧠", "Mindfulness", "5 min", 300, Color(0xFFFF7043), "timer")
+            WellnessActivity("walk", "🚶", "Walking", if (completedActivities.contains("walk")) "Done" else "15 min", 900, Success, "timer"),
+            WellnessActivity("mindful", "🧠", "Mindfulness", if (completedActivities.contains("mindful")) "Done" else "5 min", 300, Color(0xFFFF7043), "timer")
         )
     }
 
     if (activeActivity != null) {
         when (activeActivity!!.type) {
-            "breathing" -> BreathingDetailScreen(activity = activeActivity!!, onBack = { activeActivity = null })
-            "counter" -> { waterCount = (waterCount + 1).coerceAtMost(8); Toast.makeText(context, "💧 $waterCount/8 glasses", Toast.LENGTH_SHORT).show(); activeActivity = null }
-            "checklist" -> PostureCheckDialog(onDismiss = { activeActivity = null })
-            else -> TimerDetailScreen(activity = activeActivity!!, onBack = { activeActivity = null })
+            "breathing" -> BreathingDetailScreen(
+                activity = activeActivity!!, 
+                onBack = { activeActivity = null },
+                onComplete = { wellnessViewModel.completeActivity("breath") }
+            )
+            "counter" -> { 
+                wellnessViewModel.incrementWaterCount()
+                Toast.makeText(context, "💧 Water count logged!", Toast.LENGTH_SHORT).show()
+                activeActivity = null 
+            }
+            "checklist" -> PostureCheckDialog(
+                checks = postureChecks,
+                onToggleCheck = { idx -> wellnessViewModel.togglePostureCheck(idx) },
+                onDismiss = { activeActivity = null }
+            )
+            else -> TimerDetailScreen(
+                activity = activeActivity!!, 
+                onBack = { activeActivity = null },
+                onComplete = { wellnessViewModel.completeActivity(activeActivity!!.id) }
+            )
         }
         return
     }
@@ -146,13 +168,24 @@ fun WellnessScreen(
         ) {
             items(activities) { activity ->
                 val subtitle = if (activity.type == "counter") "$waterCount/8 glasses" else activity.subtitle
-                ActivityGridCard(
-                    emoji = activity.emoji,
-                    name = activity.name,
-                    subtitle = subtitle,
-                    color = activity.color,
-                    onClick = { activeActivity = activity }
-                )
+                val isCompleted = completedActivities.contains(activity.id) || (activity.id == "water" && waterCount >= 8)
+                val strokeColor = if (isCompleted) Success.copy(alpha = 0.4f) else GlassCardBorder
+                
+                Surface(
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1.1f).clip(RoundedCornerShape(16.dp)).clickable { activeActivity = activity },
+                    shape = RoundedCornerShape(16.dp),
+                    color = com.lumetrix.statsmanager.ui.theme.GlassCard,
+                    border = BorderStroke(1.dp, strokeColor)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(activity.color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                            Text(activity.emoji, style = MaterialTheme.typography.headlineSmall)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(activity.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = TextPrimary, textAlign = TextAlign.Center)
+                        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = if (isCompleted) Success else TextSecondary, textAlign = TextAlign.Center)
+                    }
+                }
             }
         }
 
@@ -174,29 +207,14 @@ fun WellnessScreen(
     }
 }
 
-@Composable
-private fun ActivityGridCard(emoji: String, name: String, subtitle: String, color: Color, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().aspectRatio(1.1f).clip(RoundedCornerShape(16.dp)).clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        color = com.lumetrix.statsmanager.ui.theme.GlassCard,
-        border = BorderStroke(1.dp, GlassCardBorder)
-    ) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-                Text(emoji, style = MaterialTheme.typography.headlineSmall)
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = TextPrimary, textAlign = TextAlign.Center)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = TextSecondary, textAlign = TextAlign.Center)
-        }
-    }
-}
-
 // ── Breathing Detail Screen ──
 
 @Composable
-private fun BreathingDetailScreen(activity: WellnessActivity, onBack: () -> Unit) {
+private fun BreathingDetailScreen(
+    activity: WellnessActivity, 
+    onBack: () -> Unit,
+    onComplete: () -> Unit
+) {
     var isRunning by remember { mutableStateOf(true) }
     var remainSec by remember { mutableIntStateOf(activity.durationSec) }
 
@@ -204,6 +222,9 @@ private fun BreathingDetailScreen(activity: WellnessActivity, onBack: () -> Unit
         while (isRunning && remainSec > 0) {
             delay(1000L)
             remainSec--
+        }
+        if (remainSec == 0) {
+            onComplete()
         }
     }
 
@@ -285,7 +306,11 @@ private fun BreathingDetailScreen(activity: WellnessActivity, onBack: () -> Unit
 // ── Timer Detail Screen ──
 
 @Composable
-private fun TimerDetailScreen(activity: WellnessActivity, onBack: () -> Unit) {
+private fun TimerDetailScreen(
+    activity: WellnessActivity, 
+    onBack: () -> Unit,
+    onComplete: () -> Unit
+) {
     var isRunning by remember { mutableStateOf(false) }
     var remainSec by remember { mutableIntStateOf(activity.durationSec) }
 
@@ -293,6 +318,9 @@ private fun TimerDetailScreen(activity: WellnessActivity, onBack: () -> Unit) {
         while (isRunning && remainSec > 0) {
             delay(1000L)
             remainSec--
+        }
+        if (remainSec == 0) {
+            onComplete()
         }
     }
 
@@ -352,9 +380,11 @@ private fun TimerDetailScreen(activity: WellnessActivity, onBack: () -> Unit) {
 // ── Posture Check Dialog ──
 
 @Composable
-private fun PostureCheckDialog(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val checks = remember { mutableStateOf(listOf(false, false, false, false)) }
+private fun PostureCheckDialog(
+    checks: List<Boolean>,
+    onToggleCheck: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
     val labels = listOf("Feet flat on floor", "Back straight", "Shoulders relaxed", "Screen at eye level")
 
     Column(
@@ -375,12 +405,12 @@ private fun PostureCheckDialog(onDismiss: () -> Unit) {
                 Text("Tap each item when you've adjusted", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
 
                 labels.forEachIndexed { idx, label ->
-                    val checked = checks.value[idx]
+                    val checked = checks[idx]
                     Row(
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                             .background(if (checked) Success.copy(alpha = 0.08f) else Color.Transparent)
                             .border(1.dp, if (checked) Success.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                            .clickable { checks.value = checks.value.toMutableList().also { it[idx] = !it[idx] } }
+                            .clickable { onToggleCheck(idx) }
                             .padding(14.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -392,7 +422,7 @@ private fun PostureCheckDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                if (checks.value.all { it }) {
+                if (checks.all { it }) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("✅ Great posture! Keep it up!", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Success, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 }

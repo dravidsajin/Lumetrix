@@ -39,8 +39,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
 import com.lumetrix.statsmanager.ui.theme.GlassCardBorder
@@ -63,54 +64,29 @@ import com.lumetrix.statsmanager.ui.theme.Success
 import com.lumetrix.statsmanager.ui.theme.TextPrimary
 import com.lumetrix.statsmanager.ui.theme.TextSecondary
 
-// ── Data Models ──
-
-private data class GoalData(
-    val id: String,
-    val title: String,
-    val description: String,
-    val icon: String,
-    val category: String, // "daily", "weekly", "longterm"
-    val type: String, // "progress", "steps", "boolean"
-    val current: Float,
-    val target: Float,
-    val unit: String,
-    val accentColor: Color,
-    val weekChecks: List<Boolean> = List(7) { false },
-    val streak: Int = 0,
-    val bestStreak: Int = 0,
-    val totalCompleted: Int = 0
-)
-
-// ── Main Screen ──
-
 @Composable
 fun GoalsScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    goalsViewModel: GoalsViewModel = viewModel()
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf("Daily") }
-    var selectedGoalDetail by remember { mutableStateOf<GoalData?>(null) }
+    var selectedGoalDetail by remember { mutableStateOf<GoalItem?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val allGoals = remember {
-        mutableStateListOf(
-            GoalData("1", "Read for 30 mins", "Build the habit of reading daily", "📖", "daily", "progress", 20f, 30f, "mins", AccentSecondary, listOf(true, true, true, true, false, false, false), 4, 7, 28),
-            GoalData("2", "Drink 2L Water", "Stay hydrated throughout the day", "💧", "daily", "progress", 1.4f, 2f, "L", AccentPrimary, listOf(true, true, false, true, true, false, false), 3, 5, 45),
-            GoalData("3", "Walk 5,000 steps", "Keep active with daily walking", "🚶", "daily", "steps", 4043f, 5000f, "steps", Color(0xFFFFB74D), listOf(true, true, true, false, false, false, false), 3, 10, 60),
-            GoalData("4", "No phone after 10 PM", "Better sleep hygiene", "📵", "daily", "boolean", 1f, 1f, "", Success, listOf(true, true, true, true, true, false, false), 5, 12, 35),
-            GoalData("5", "Exercise 5x a week", "Build consistent fitness routine", "🏋️", "weekly", "progress", 3f, 5f, "sessions", Color(0xFFE040FB), listOf(true, false, true, false, true, false, false), 2, 4, 15),
-            GoalData("6", "Learn Kotlin 2h", "Study Kotlin weekly", "💻", "weekly", "progress", 1.5f, 2f, "hrs", AccentPrimary, listOf(true, true, false, false, false, false, false), 1, 3, 8),
-            GoalData("7", "Run a Marathon", "Train for 42km run", "🏃", "longterm", "progress", 28f, 42f, "km", Color(0xFFFF5252), streak = 12, bestStreak = 12, totalCompleted = 0),
-            GoalData("8", "Read 52 Books", "One book per week challenge", "📚", "longterm", "progress", 23f, 52f, "books", Color(0xFFFFB74D), streak = 23, bestStreak = 23, totalCompleted = 23)
-        )
+    val allGoals by goalsViewModel.goalsState.collectAsState()
+
+    // Sync selected goal details if it is currently open
+    val currentGoalDetail = selectedGoalDetail?.let { current ->
+        allGoals.firstOrNull { it.id == current.id }
     }
 
-    if (selectedGoalDetail != null) {
+    if (currentGoalDetail != null) {
         GoalDetailsSubScreen(
-            goal = selectedGoalDetail!!,
-            onBack = { selectedGoalDetail = null }
+            goal = currentGoalDetail,
+            onBack = { selectedGoalDetail = null },
+            onToggleCheck = { dayIdx -> goalsViewModel.toggleGoalCheck(currentGoalDetail.id, dayIdx) }
         )
     } else {
         Column(
@@ -161,7 +137,11 @@ fun GoalsScreen(
             }
 
             // Goals list
-            val categoryKey = when (selectedTab) { "Daily" -> "daily"; "Weekly" -> "weekly"; else -> "longterm" }
+            val categoryKey = when (selectedTab) { 
+                "Daily" -> "daily"
+                "Weekly" -> "weekly"
+                else -> "longterm" 
+            }
             val filteredGoals = allGoals.filter { it.category == categoryKey }
 
             Column(
@@ -188,9 +168,19 @@ fun GoalsScreen(
                 } else {
                     filteredGoals.forEach { goal ->
                         when (goal.type) {
-                            "steps" -> StepCounterGoalCard(goal = goal, onClick = { selectedGoalDetail = goal })
-                            "boolean" -> BooleanGoalCard(goal = goal, onClick = { selectedGoalDetail = goal })
-                            else -> ProgressGoalCard(goal = goal, onClick = { selectedGoalDetail = goal })
+                            "steps" -> StepCounterGoalCard(
+                                goal = goal, 
+                                onClick = { selectedGoalDetail = goal }
+                            )
+                            "boolean" -> BooleanGoalCard(
+                                goal = goal, 
+                                onClick = { selectedGoalDetail = goal }
+                            )
+                            else -> ProgressGoalCard(
+                                goal = goal, 
+                                onClick = { selectedGoalDetail = goal },
+                                onIncrement = { goalsViewModel.incrementGoalProgress(goal.id, 5f) }
+                            )
                         }
                     }
                 }
@@ -222,7 +212,7 @@ fun GoalsScreen(
             AddGoalDialog(
                 onDismiss = { showAddDialog = false },
                 onConfirm = { title, desc, emoji, limit, cat ->
-                    allGoals.add(GoalData(System.currentTimeMillis().toString(), title, desc, emoji, cat, "progress", 0f, limit, "mins", AccentPrimary))
+                    goalsViewModel.addGoal(title, desc, emoji, limit, cat)
                     showAddDialog = false
                     Toast.makeText(context, "Goal added!", Toast.LENGTH_SHORT).show()
                 }
@@ -231,11 +221,25 @@ fun GoalsScreen(
     }
 }
 
+// Helper to parse Hex color strings
+private fun parseHexColor(hex: String): Color {
+    return try {
+        Color(android.graphics.Color.parseColor(hex))
+    } catch (e: Exception) {
+        AccentPrimary
+    }
+}
+
 // ── Goal Cards ──
 
 @Composable
-private fun ProgressGoalCard(goal: GoalData, onClick: () -> Unit) {
+private fun ProgressGoalCard(
+    goal: GoalItem, 
+    onClick: () -> Unit,
+    onIncrement: () -> Unit
+) {
     val pct = ((goal.current / goal.target) * 100).toInt().coerceIn(0, 100)
+    val color = parseHexColor(goal.accentColorHex)
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
@@ -251,24 +255,38 @@ private fun ProgressGoalCard(goal: GoalData, onClick: () -> Unit) {
                         Text(goal.description, style = MaterialTheme.typography.labelSmall, color = TextSecondary, maxLines = 1)
                     }
                 }
+                
+                // Direct progress increment button
+                if (goal.current < goal.target && (goal.id.startsWith("custom_") || goal.id == "water_daily")) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(color.copy(alpha = 0.15f))
+                            .clickable { onIncrement() }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text("+5m", style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${goal.current.toCleanString()} / ${goal.target.toCleanString()} ${goal.unit}", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                Text("$pct%", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = goal.accentColor)
+                Text("$pct%", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = color)
             }
             LinearProgressIndicator(
                 progress = { (goal.current / goal.target).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
-                color = goal.accentColor,
-                trackColor = goal.accentColor.copy(alpha = 0.1f)
+                color = color,
+                trackColor = color.copy(alpha = 0.1f)
             )
         }
     }
 }
 
 @Composable
-private fun StepCounterGoalCard(goal: GoalData, onClick: () -> Unit) {
+private fun StepCounterGoalCard(goal: GoalItem, onClick: () -> Unit) {
     val progress = (goal.current / goal.target).coerceIn(0f, 1f)
+    val color = parseHexColor(goal.accentColorHex)
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
@@ -280,14 +298,14 @@ private fun StepCounterGoalCard(goal: GoalData, onClick: () -> Unit) {
                 Text(goal.icon, style = MaterialTheme.typography.titleLarge)
                 Column {
                     Text(goal.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text("${goal.current.toInt()} / ${goal.target.toInt()}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    Text("${goal.current.toInt()} / ${goal.target.toInt()} ${goal.unit}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                 }
             }
             // Circular progress ring
             Box(modifier = Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                 Canvas(modifier = Modifier.size(56.dp)) {
                     drawArc(color = Color.White.copy(alpha = 0.06f), 0f, 360f, false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
-                    drawArc(color = goal.accentColor, startAngle = -90f, sweepAngle = progress * 360f, useCenter = false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
+                    drawArc(color = color, startAngle = -90f, sweepAngle = progress * 360f, useCenter = false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
                 }
                 Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
@@ -296,7 +314,7 @@ private fun StepCounterGoalCard(goal: GoalData, onClick: () -> Unit) {
 }
 
 @Composable
-private fun BooleanGoalCard(goal: GoalData, onClick: () -> Unit) {
+private fun BooleanGoalCard(goal: GoalItem, onClick: () -> Unit) {
     val isComplete = goal.current >= goal.target
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { onClick() },
@@ -324,8 +342,13 @@ private fun BooleanGoalCard(goal: GoalData, onClick: () -> Unit) {
 // ── Goal Details Sub-Screen ──
 
 @Composable
-private fun GoalDetailsSubScreen(goal: GoalData, onBack: () -> Unit) {
+private fun GoalDetailsSubScreen(
+    goal: GoalItem, 
+    onBack: () -> Unit,
+    onToggleCheck: (Int) -> Unit
+) {
     val pct = ((goal.current / goal.target) * 100).toInt().coerceIn(0, 100)
+    val color = parseHexColor(goal.accentColorHex)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -348,7 +371,7 @@ private fun GoalDetailsSubScreen(goal: GoalData, onBack: () -> Unit) {
         // Goal title card
         Surface(shape = RoundedCornerShape(16.dp), color = com.lumetrix.statsmanager.ui.theme.GlassCard, border = BorderStroke(1.dp, GlassCardBorder), modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(goal.accentColor.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(color.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
                     Text(goal.icon, style = MaterialTheme.typography.headlineSmall)
                 }
                 Column {
@@ -364,13 +387,13 @@ private fun GoalDetailsSubScreen(goal: GoalData, onBack: () -> Unit) {
                 Text("Progress", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("${goal.current.toCleanString()} / ${goal.target.toCleanString()} ${goal.unit}", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                    Text("$pct%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = goal.accentColor)
+                    Text("$pct%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = color)
                 }
                 LinearProgressIndicator(
                     progress = { (goal.current / goal.target).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                    color = goal.accentColor,
-                    trackColor = goal.accentColor.copy(alpha = 0.1f)
+                    color = color,
+                    trackColor = color.copy(alpha = 0.1f)
                 )
             }
         }
@@ -388,7 +411,8 @@ private fun GoalDetailsSubScreen(goal: GoalData, onBack: () -> Unit) {
                             Box(
                                 modifier = Modifier.size(36.dp).clip(CircleShape)
                                     .background(if (checked) Success.copy(alpha = 0.15f) else Color.Transparent)
-                                    .border(1.dp, if (checked) Success.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.08f), CircleShape),
+                                    .border(1.dp, if (checked) Success.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.08f), CircleShape)
+                                    .clickable { onToggleCheck(idx) },
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (checked) Icon(Icons.Outlined.Check, null, tint = Success, modifier = Modifier.size(16.dp))
