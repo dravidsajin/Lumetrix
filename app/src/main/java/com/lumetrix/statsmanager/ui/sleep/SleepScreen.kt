@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
 import com.lumetrix.statsmanager.ui.theme.GlassCardBorder
@@ -55,28 +57,36 @@ import com.lumetrix.statsmanager.ui.theme.LumetrixTokens
 import com.lumetrix.statsmanager.ui.theme.Success
 import com.lumetrix.statsmanager.ui.theme.TextPrimary
 import com.lumetrix.statsmanager.ui.theme.TextSecondary
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun SleepScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sleepViewModel: SleepViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    var selectedFilter by remember { mutableStateOf("Week") }
     var showInsights by remember { mutableStateOf(false) }
 
+    val state by sleepViewModel.sleepState.collectAsState()
+
     if (showInsights) {
-        SleepInsightsSubScreen(onBack = { showInsights = false })
+        SleepInsightsSubScreen(
+            score = state.sleepScore,
+            onBack = { showInsights = false }
+        )
         return
     }
 
-    val durationLabel = when (selectedFilter) { "Day" -> "7h 30m"; "Week" -> "7h 48m"; "Month" -> "8h 12m"; else -> "7h 55m" }
-    val trendText = when (selectedFilter) { "Day" -> "▲ 3% vs yesterday"; "Week" -> "▲ 8% vs last week"; "Month" -> "▲ 12% vs last month"; else -> "▲ 5% vs last year" }
-    val avgLabel = when (selectedFilter) { "Day" -> "Avg Sleep"; "Week" -> "Avg Sleep"; else -> "Avg Sleep" }
-    val quality = when (selectedFilter) { "Day" -> "Good"; "Week" -> "Good"; "Month" -> "Great"; else -> "Good" }
-    val qualityColor = when (quality) { "Great" -> AccentPrimary; "Good" -> Success; else -> Color(0xFFFFB74D) }
+    val quality = when {
+        state.sleepScore >= 85 -> "Great"
+        state.sleepScore >= 70 -> "Good"
+        else -> "Fair"
+    }
+    val qualityColor = when (quality) {
+        "Great" -> AccentSecondary
+        "Good" -> Success
+        else -> Color(0xFFFFB84D)
+    }
 
     Column(
         modifier = modifier
@@ -99,8 +109,17 @@ fun SleepScreen(
         val tabs = listOf("Day", "Week", "Month", "Year")
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             tabs.forEach { tab ->
-                val isSelected = selectedFilter == tab
-                Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(50)).background(if (isSelected) AccentSecondary.copy(alpha = 0.2f) else Color.Transparent).border(1.dp, if (isSelected) AccentSecondary.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(50)).clickable { selectedFilter = tab }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                val isSelected = state.selectedFilter == tab
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (isSelected) AccentSecondary.copy(alpha = 0.2f) else Color.Transparent)
+                        .border(1.dp, if (isSelected) AccentSecondary.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(50))
+                        .clickable { sleepViewModel.setFilter(tab) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(tab, style = MaterialTheme.typography.labelMedium, color = if (isSelected) AccentSecondary else TextSecondary, fontWeight = FontWeight.Bold)
                 }
             }
@@ -111,28 +130,27 @@ fun SleepScreen(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(durationLabel, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
-                        Text(avgLabel, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        Text(state.durationLabel, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+                        Text("Avg Sleep Duration", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                     }
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(quality, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = qualityColor)
-                        Text(trendText, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Success)
+                        Text(state.trendLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Success)
                     }
                 }
 
                 // Bar chart
-                val barData = remember(selectedFilter) {
-                    when (selectedFilter) {
-                        "Day" -> listOf(7.5f)
-                        "Week" -> listOf(7.8f, 6.2f, 7.5f, 6.8f, 5.9f, 8.8f, 7.2f)
-                        "Month" -> listOf(7.5f, 7.8f, 6.9f, 8.1f, 7.4f, 8.5f, 7.9f, 8.2f, 7.0f, 7.5f)
-                        else -> listOf(7.2f, 7.5f, 7.8f, 7.3f, 7.9f, 8.0f, 7.6f, 7.4f, 8.1f, 7.7f, 7.5f, 7.8f)
+                val barData = state.chartPoints.map { it.value }
+                if (barData.isNotEmpty()) {
+                    SleepBarChart(data = barData, modifier = Modifier.fillMaxWidth().height(120.dp))
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        Text("No sleep tracking records for this period", color = TextSecondary)
                     }
                 }
-                SleepBarChart(data = barData, modifier = Modifier.fillMaxWidth().height(120.dp))
 
                 // Day labels
-                if (selectedFilter == "Week") {
+                if (state.selectedFilter == "Week") {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
                             Text(it, style = MaterialTheme.typography.labelSmall, color = TextSecondary.copy(alpha = 0.7f), modifier = Modifier.width(32.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -147,14 +165,9 @@ fun SleepScreen(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Sleep Stages (Avg)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
 
-                val stages = listOf(
-                    Triple("Awake", "0h 23m", Color(0xFFFF5252)),
-                    Triple("Light", "3h 42m", Color(0xFF42A5F5)),
-                    Triple("Deep", "1h 51m", Color(0xFF7E57C2)),
-                    Triple("REM", "1h 52m", Color(0xFF26C6DA))
-                )
-                stages.forEach { (name, duration, color) ->
-                    SleepStageRow(name = name, duration = duration, color = color, fraction = when (name) { "Awake" -> 0.05f; "Light" -> 0.47f; "Deep" -> 0.24f; else -> 0.24f })
+                state.stages.forEach { stage ->
+                    val color = try { Color(android.graphics.Color.parseColor(stage.colorHex)) } catch (e: Exception) { AccentPrimary }
+                    SleepStageRow(name = stage.name, duration = stage.durationLabel, color = color, fraction = stage.fraction)
                 }
             }
         }
@@ -192,7 +205,7 @@ private fun SleepBarChart(data: List<Float>, modifier: Modifier = Modifier) {
         }
 
         data.forEachIndexed { idx, value ->
-            val barHeight = (value / maxVal) * size.height
+            val barHeight = ((value / maxVal) * size.height).coerceAtLeast(10f)
             val x = idx * (barWidth + barSpacing)
             val topLeft = Offset(x, size.height - barHeight)
 
@@ -217,7 +230,7 @@ private fun SleepStageRow(name: String, duration: String, color: Color, fraction
             Text(duration, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
         Box(modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.05f))) {
-            Box(modifier = Modifier.fillMaxWidth(fraction).height(4.dp).clip(CircleShape).background(color))
+            Box(modifier = Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(4.dp).clip(CircleShape).background(color))
         }
     }
 }
@@ -225,7 +238,7 @@ private fun SleepStageRow(name: String, duration: String, color: Color, fraction
 // ── Sleep Insights Sub-Screen ──
 
 @Composable
-private fun SleepInsightsSubScreen(onBack: () -> Unit) {
+private fun SleepInsightsSubScreen(score: Int, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -282,9 +295,9 @@ private fun SleepInsightsSubScreen(onBack: () -> Unit) {
                     Box(modifier = Modifier.size(60.dp), contentAlignment = Alignment.Center) {
                         Canvas(modifier = Modifier.size(60.dp)) {
                             drawArc(Color.White.copy(alpha = 0.05f), 0f, 360f, false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
-                            drawArc(brush = Brush.sweepGradient(listOf(Success, AccentPrimary, Success)), startAngle = -90f, sweepAngle = 86f * 3.6f, useCenter = false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
+                            drawArc(brush = Brush.sweepGradient(listOf(Success, AccentPrimary, Success)), startAngle = -90f, sweepAngle = score * 3.6f, useCenter = false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
                         }
-                        Text("86", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Success)
+                        Text(score.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Success)
                     }
                 }
             }

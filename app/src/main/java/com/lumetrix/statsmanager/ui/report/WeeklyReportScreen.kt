@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumetrix.statsmanager.ui.theme.AccentPrimary
 import com.lumetrix.statsmanager.ui.theme.AccentSecondary
 import com.lumetrix.statsmanager.ui.theme.GlassCardBorder
@@ -57,13 +59,18 @@ import com.lumetrix.statsmanager.ui.theme.TextSecondary
 @Composable
 fun WeeklyReportScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    weeklyReportViewModel: WeeklyReportViewModel = viewModel()
 ) {
     val context = LocalContext.current
     var showDetails by remember { mutableStateOf(false) }
+    val state by weeklyReportViewModel.reportState.collectAsState()
 
     if (showDetails) {
-        ReportDetailsSubScreen(onBack = { showDetails = false })
+        ReportDetailsSubScreen(
+            state = state,
+            onBack = { showDetails = false }
+        )
         return
     }
 
@@ -82,9 +89,9 @@ fun WeeklyReportScreen(
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = TextPrimary) }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Weekly Report", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Text("6 – 12 May 2024", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text(state.dateRange, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
-            IconButton(onClick = { Toast.makeText(context, "Share report", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Outlined.Share, "Share", tint = TextPrimary) }
+            IconButton(onClick = { Toast.makeText(context, "Share report details", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Outlined.Share, "Share", tint = TextPrimary) }
         }
 
         // Score gauge card
@@ -96,22 +103,22 @@ fun WeeklyReportScreen(
                         val strokeWidth = 10.dp.toPx()
                         // Track
                         drawArc(Color.White.copy(alpha = 0.05f), 0f, 360f, false, style = Stroke(strokeWidth, cap = StrokeCap.Round))
-                        // Score arc (83/100 => 299 degrees)
+                        // Score arc
                         drawArc(
                             brush = Brush.sweepGradient(listOf(Success, AccentPrimary, Success)),
                             startAngle = -90f,
-                            sweepAngle = 83f * 3.6f,
+                            sweepAngle = state.digitalScore * 3.6f,
                             useCenter = false,
                             style = Stroke(strokeWidth, cap = StrokeCap.Round)
                         )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("83", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+                        Text(state.digitalScore.toString(), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
                         Text("Digital Score", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                     }
                 }
 
-                Text("Great week, David! 🎉", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Success)
+                Text(state.greeting, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Success)
             }
         }
 
@@ -120,22 +127,17 @@ fun WeeklyReportScreen(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Top Achievements", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
 
-                val achievements = listOf(
-                    Triple("🎯", "4 hours focus streak", AccentSecondary),
-                    Triple("📵", "No phone after 10 PM × 5 days", AccentPrimary),
-                    Triple("😴", "Average sleep 7h 48m", Color(0xFF26C6DA)),
-                    Triple("📈", "Productivity rating: high", Success)
-                )
-                achievements.forEach { (emoji, text, color) ->
+                state.achievements.forEach { achievement ->
+                    val color = try { Color(android.graphics.Color.parseColor(achievement.colorHex)) } catch (e: Exception) { AccentPrimary }
                     Row(
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.06f)).padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-                            Text(emoji, style = MaterialTheme.typography.bodyLarge)
+                            Text(achievement.emoji, style = MaterialTheme.typography.bodyLarge)
                         }
-                        Text(text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = TextPrimary)
+                        Text(achievement.text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = TextPrimary)
                     }
                 }
             }
@@ -169,7 +171,10 @@ fun WeeklyReportScreen(
 // ── Report Details Sub-Screen ──
 
 @Composable
-private fun ReportDetailsSubScreen(onBack: () -> Unit) {
+private fun ReportDetailsSubScreen(
+    state: WeeklyReportUiState,
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf("Summary") }
 
@@ -207,9 +212,9 @@ private fun ReportDetailsSubScreen(onBack: () -> Unit) {
         }
 
         when (selectedTab) {
-            "Summary" -> SummaryTab()
-            "Insights" -> InsightsTab()
-            "Highlights" -> HighlightsTab()
+            "Summary" -> SummaryTab(state.summaryItems)
+            "Insights" -> InsightsTab(state.insights)
+            "Highlights" -> HighlightsTab(state.highlights)
         }
 
         // Share Report button
@@ -227,24 +232,17 @@ private fun ReportDetailsSubScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun SummaryTab() {
-    val items = listOf(
-        Triple("📱", "Screen Time", "5h 12m avg (↓ 8%)"),
-        Triple("🎯", "Focus Time", "2h 34m avg (↑ 15%)"),
-        Triple("😴", "Sleep", "7h 48m avg (↑ 3%)"),
-        Triple("🔓", "Unlocks", "42 avg (↓ 12%)"),
-        Triple("📬", "Notifications", "187 avg (↓ 5%)")
-    )
+private fun SummaryTab(items: List<ReportSummaryItem>) {
     Surface(shape = RoundedCornerShape(16.dp), color = com.lumetrix.statsmanager.ui.theme.GlassCard, border = BorderStroke(1.dp, GlassCardBorder), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Weekly Summary", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            items.forEach { (emoji, label, value) ->
+            items.forEach { item ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(emoji, style = MaterialTheme.typography.bodyLarge)
-                        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontWeight = FontWeight.Medium)
+                        Text(item.emoji, style = MaterialTheme.typography.bodyLarge)
+                        Text(item.label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontWeight = FontWeight.Medium)
                     }
-                    Text(value, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Text(item.valueLabel, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
             }
         }
@@ -252,27 +250,21 @@ private fun SummaryTab() {
 }
 
 @Composable
-private fun InsightsTab() {
-    val insights = listOf(
-        Triple("📸", "Instagram usage increased by 12%", Color(0xFFE040FB)),
-        Triple("⏰", "Best focus hours: 9 AM – 12 PM", AccentPrimary),
-        Triple("😴", "Sleep consistency improved by 8%", Success),
-        Triple("📵", "Phone-free evenings × 5 days", AccentSecondary),
-        Triple("📊", "Productivity was high this week", Color(0xFF00E5FF))
-    )
+private fun InsightsTab(insights: List<ReportInsightItem>) {
     Surface(shape = RoundedCornerShape(16.dp), color = com.lumetrix.statsmanager.ui.theme.GlassCard, border = BorderStroke(1.dp, GlassCardBorder), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("AI Insights", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            insights.forEach { (emoji, text, color) ->
+            insights.forEach { insight ->
+                val color = try { Color(android.graphics.Color.parseColor(insight.colorHex)) } catch (e: Exception) { AccentPrimary }
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.06f)).padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(modifier = Modifier.size(32.dp).clip(CircleShape).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-                        Text(emoji, style = MaterialTheme.typography.bodyMedium)
+                        Text(insight.emoji, style = MaterialTheme.typography.bodyMedium)
                     }
-                    Text(text, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                    Text(insight.text, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -280,21 +272,16 @@ private fun InsightsTab() {
 }
 
 @Composable
-private fun HighlightsTab() {
-    val highlights = listOf(
-        "🏆" to "Longest focus streak: 4h 12m on Wednesday",
-        "📖" to "Completed 'Read for 30 mins' goal × 6 days",
-        "🚶" to "Best step count: 8,234 steps on Friday",
-        "💧" to "Hit water goal 5/7 days",
-        "🌙" to "Best sleep: 8h 45m on Saturday"
-    )
+private fun HighlightsTab(highlights: List<String>) {
+    val emojis = listOf("🏆", "📖", "🚶", "💧", "🌙")
     Surface(shape = RoundedCornerShape(16.dp), color = com.lumetrix.statsmanager.ui.theme.GlassCard, border = BorderStroke(1.dp, GlassCardBorder), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Week Highlights", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            highlights.forEach { (emoji, text) ->
+            highlights.forEachIndexed { idx, highlight ->
+                val emoji = emojis.getOrElse(idx) { "🌟" }
                 Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(emoji, style = MaterialTheme.typography.titleMedium)
-                    Text(text, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                    Text(highlight, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
                 }
             }
         }
