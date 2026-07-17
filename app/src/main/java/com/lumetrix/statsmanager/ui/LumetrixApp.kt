@@ -85,6 +85,12 @@ fun LumetrixApp() {
                         onBack = { activeOverlayScreen = null }
                     )
                 }
+                targetState == "apps" -> {
+                    AppsScreen(
+                        onNavigateToAppDetails = { appDetailsPackageName = it },
+                        onBack = { activeOverlayScreen = null }
+                    )
+                }
                 else -> {
                     Box(modifier = Modifier.fillMaxSize()) {
                         AnimatedContent(
@@ -98,14 +104,15 @@ fun LumetrixApp() {
                             when (LumetrixDestination.entries[index]) {
                                 LumetrixDestination.Pulse -> DashboardScreen(
                                     onNavigateToAppDetails = { appDetailsPackageName = it },
-                                    onNavigateToSleep = { activeOverlayScreen = "sleep" }
+                                    onNavigateToSleep = { activeOverlayScreen = "sleep" },
+                                    onNavigateToApps = { activeOverlayScreen = "apps" }
                                 )
                                 LumetrixDestination.Insights -> InsightsScreen(
-                                    onNavigateToApps = { selectedIndex = 3 }
+                                    onNavigateToApps = { activeOverlayScreen = "apps" }
                                 )
                                 LumetrixDestination.Focus -> FocusScreen()
-                                LumetrixDestination.Apps -> AppsScreen(
-                                    onNavigateToAppDetails = { appDetailsPackageName = it }
+                                LumetrixDestination.Apps -> WeeklyReportScreen(
+                                    onBack = null
                                 )
                                 LumetrixDestination.Settings -> SettingsScreen(
                                     onNavigateToOverlay = { activeOverlayScreen = it }

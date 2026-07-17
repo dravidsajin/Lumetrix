@@ -96,6 +96,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
     onNavigateToAppDetails: (String) -> Unit = {},
     onNavigateToSleep: () -> Unit = {},
+    onNavigateToApps: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -301,9 +302,7 @@ fun DashboardScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = AccentPrimary,
                                     modifier = Modifier.clickable {
-                                        if (uiState.topApps.isNotEmpty()) {
-                                            onNavigateToAppDetails(uiState.topApps.first().packageName)
-                                        }
+                                        onNavigateToApps()
                                     }
                                 )
                             }
@@ -322,7 +321,7 @@ fun DashboardScreen(
                                     items(uiState.topApps) { app ->
                                         HorizontalAppUsageItem(
                                             app = app,
-                                            onClick = { selectedApp = app }
+                                            onClick = { onNavigateToAppDetails(app.packageName) }
                                         )
                                     }
                                 }
@@ -349,9 +348,7 @@ fun DashboardScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = AccentPrimary,
                                     modifier = Modifier.clickable {
-                                        if (uiState.timelineEvents.isNotEmpty()) {
-                                            onNavigateToAppDetails(uiState.timelineEvents.first().packageName)
-                                        }
+                                        onNavigateToApps()
                                     }
                                 )
                             }
