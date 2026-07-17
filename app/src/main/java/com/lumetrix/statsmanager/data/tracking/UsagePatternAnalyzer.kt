@@ -19,6 +19,29 @@ class UsagePatternAnalyzer @Inject constructor(
     private val usageStatsManager: UsageStatsManager =
         context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
+    /** Mirrors the same exclusion logic as UsageStatsCollector.shouldSkipPackage */
+    private fun shouldSkipPackage(packageName: String): Boolean {
+        if (packageName == context.packageName) return true
+        if (packageName.startsWith("com.android.systemui")) return true
+        if (packageName.startsWith("com.android.launcher")) return true
+        if (packageName.startsWith("com.google.android.apps.nexuslauncher")) return true
+        if (packageName.startsWith("com.sec.android.app.launcher")) return true
+        if (packageName.startsWith("com.miui.home")) return true
+        if (packageName.startsWith("com.oneplus.launcher")) return true
+        if (packageName.startsWith("com.oppo.launcher")) return true
+        if (packageName.startsWith("com.vivo.launcher")) return true
+        if (packageName.startsWith("com.huawei.android.launcher")) return true
+        if (packageName.startsWith("com.lge.launcher")) return true
+        if (packageName.startsWith("com.htc.launcher")) return true
+        if (packageName.endsWith(".launcher") || packageName.endsWith(".launcher3")) return true
+        if (packageName.endsWith(".home")) return true
+        if (packageName.startsWith("com.google.android.inputmethod")) return true
+        if (packageName.startsWith("com.swiftkey") || packageName.startsWith("com.touchtype.swiftkey")) return true
+        if (packageName == "android") return true
+        if (packageName.startsWith("com.android.settings")) return true
+        return false
+    }
+
     data class PatternAnalysis(
         val lateNightMsThisWeek: Long,
         val lateNightChangePercent: Int,
@@ -73,6 +96,8 @@ class UsagePatternAnalyzer @Inject constructor(
             val event = UsageEvents.Event()
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
+                val pkg = event.packageName ?: continue
+                if (shouldSkipPackage(pkg)) continue
                 when (event.eventType) {
                     UsageEvents.Event.ACTIVITY_RESUMED,
                     UsageEvents.Event.MOVE_TO_FOREGROUND,
@@ -143,6 +168,8 @@ class UsagePatternAnalyzer @Inject constructor(
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
+            val pkg = event.packageName ?: continue
+            if (shouldSkipPackage(pkg)) continue
             when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED,
                 UsageEvents.Event.MOVE_TO_FOREGROUND,
@@ -186,6 +213,8 @@ class UsagePatternAnalyzer @Inject constructor(
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
+            val pkg = event.packageName ?: continue
+            if (shouldSkipPackage(pkg)) continue
             when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED,
                 UsageEvents.Event.MOVE_TO_FOREGROUND,

@@ -1,12 +1,12 @@
 package com.lumetrix.statsmanager.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Lightbulb
@@ -20,7 +20,7 @@ enum class LumetrixDestination(
     Pulse("pulse", "Pulse"),
     Insights("insights", "Insights"),
     Focus("focus", "Focus"),
-    Apps("apps", "Apps"),
+    Apps("report", "AI Coach"),
     Settings("settings", "Settings")
 }
 
@@ -42,8 +42,8 @@ fun lumetrixBottomNavItems(): List<BottomNavItem> = listOf(
     ),
     BottomNavItem(
         label = LumetrixDestination.Apps.label,
-        icon = Icons.Outlined.Apps,
-        selectedIcon = Icons.Rounded.Apps,
+        icon = Icons.Outlined.AutoAwesome,
+        selectedIcon = Icons.Rounded.AutoAwesome,
     ),
     BottomNavItem(
         label = LumetrixDestination.Settings.label,

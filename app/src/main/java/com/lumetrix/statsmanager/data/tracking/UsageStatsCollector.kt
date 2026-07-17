@@ -241,9 +241,33 @@ class UsageStatsCollector @Inject constructor(
             ).toString()
         }.getOrDefault(packageName)
 
-    private fun shouldSkipPackage(packageName: String): Boolean =
-        packageName == context.packageName ||
-            packageName.startsWith("com.android.systemui")
+    private fun shouldSkipPackage(packageName: String): Boolean {
+        if (packageName == context.packageName) return true
+        // System UI and core OS packages
+        if (packageName.startsWith("com.android.systemui")) return true
+        if (packageName.startsWith("com.android.launcher")) return true
+        // Pixel / AOSP / OEM launchers
+        if (packageName.startsWith("com.google.android.apps.nexuslauncher")) return true
+        if (packageName.startsWith("com.sec.android.app.launcher")) return true // Samsung
+        if (packageName.startsWith("com.miui.home")) return true               // Xiaomi
+        if (packageName.startsWith("com.oneplus.launcher")) return true
+        if (packageName.startsWith("com.oppo.launcher")) return true
+        if (packageName.startsWith("com.vivo.launcher")) return true
+        if (packageName.startsWith("com.huawei.android.launcher")) return true
+        if (packageName.startsWith("com.lge.launcher")) return true
+        if (packageName.startsWith("com.htc.launcher")) return true
+        // Generic: any package named *.launcher or *.home
+        if (packageName.endsWith(".launcher") || packageName.endsWith(".launcher3")) return true
+        if (packageName.endsWith(".home")) return true
+        // IME / keyboards
+        if (packageName.startsWith("com.google.android.inputmethod")) return true
+        if (packageName.startsWith("com.swiftkey")) return true
+        if (packageName.startsWith("com.touchtype.swiftkey")) return true
+        // Android framework packages that are never intentional usage
+        if (packageName == "android") return true
+        if (packageName.startsWith("com.android.settings")) return true
+        return false
+    }
 
     private class AppAggregate(val packageName: String) {
         var totalDurationMs: Long = 0L
